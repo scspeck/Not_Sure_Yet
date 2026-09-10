@@ -1,0 +1,1168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Trait MMAP — Mapper for Mammals and Parasites. Upload, filter, map, spatially select, and export georeferenced mammal trait data in your browser.">
+<title>Trait MMAP — Mapper for Mammals and Parasites</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+
+<style>
+:root{
+  --bg:#f4f6f7;
+  --panel:#ffffff;
+  --border:#d9e0e4;
+  --text:#1e272d;
+  --muted:#68757d;
+  --accent:#2f6f56;
+  --accent-dark:#245842;
+  --soft:#eef3f0;
+  --warning:#8b5e1a;
+  --danger:#9f3535;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--text);background:var(--bg)}
+body{display:grid;grid-template-columns:420px 1fr}
+aside{height:100vh;overflow:auto;padding:18px;background:var(--panel);border-right:1px solid var(--border);z-index:1001}
+#map{height:100vh;width:100%}
+h1{font-size:1.55rem;margin:0 0 2px}
+.brand-sub{font-size:.86rem;font-weight:700;color:var(--accent);margin-bottom:6px}
+.subtitle{font-size:.8rem;line-height:1.45;color:var(--muted);margin:0 0 12px}
+.section{font-size:.73rem;letter-spacing:.08em;text-transform:uppercase;color:#53616a;font-weight:700;margin:18px 0 6px;padding-bottom:4px;border-bottom:1px solid #e5e9eb}
+label{font-size:.8rem;font-weight:700;display:block;margin:8px 0 3px}
+input,select,button,textarea{font:inherit}
+select,input[type=text],input[type=number],input[type=file]{
+  width:100%;padding:7px;border:1px solid #bac4ca;border-radius:5px;background:#fff
+}
+button{width:100%;padding:9px;border:0;border-radius:6px;cursor:pointer;margin-top:8px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:var(--accent);color:#fff}
+.primary:hover{background:var(--accent-dark)}
+.secondary{background:#e9edef;color:#111}
+.danger{background:#f4e7e7;color:#762b2b}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0}
+.stat{border:1px solid var(--border);background:#f9fafb;border-radius:7px;padding:8px}
+.stat strong{display:block;font-size:1.08rem}.stat span{font-size:.68rem;color:var(--muted)}
+.small{font-size:.73rem;line-height:1.45;color:var(--muted)}
+.note{border:1px solid var(--border);padding:9px;margin-top:10px;background:#fbfcfc;border-radius:6px}
+.good{border-color:#a9c7b9;background:#f3f8f5}
+.warn{border-color:#d9c096;background:#fffaf0;color:#71511c}
+.hidden{display:none!important}
+.mapping-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.trait-list{max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:6px}
+.trait-row{display:grid;grid-template-columns:26px minmax(0,1fr) 105px;gap:6px;align-items:center;padding:6px 7px;border-bottom:1px solid #edf0f1}
+.trait-row:last-child{border-bottom:0}
+.trait-row input[type=checkbox]{width:auto}
+.trait-row select{padding:5px}
+.trait-name{font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filter-card{border:1px solid var(--border);border-radius:6px;padding:8px;margin:7px 0;background:#fcfdfd}
+.filter-card label{margin-top:0}
+.filter-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:5px}
+.filter-head span{font-size:.72rem;color:var(--muted);font-weight:normal}
+.range-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.check-inline{display:flex;align-items:center;gap:6px;font-size:.75rem;margin-top:4px}
+.check-inline input{width:auto}
+.leaflet-popup-content{min-width:270px;max-width:430px;max-height:480px;overflow:auto}
+.popup-title{font-size:1rem;font-weight:700;margin-bottom:3px}
+.popup-grid{display:grid;grid-template-columns:minmax(95px,35%) 1fr;gap:3px 8px;font-size:.78rem}
+.popup-key{font-weight:700;color:#4d5a61}
+.guid{font-family:monospace;font-size:.73rem;color:#5b6870}
+.popup-section{margin-top:9px;padding-top:7px;border-top:1px solid #eee}
+.selected-marker{filter:drop-shadow(0 0 3px #111)}
+#statusBanner{margin-top:8px}
+#traitFiltersEmpty{padding:8px 0}
+.visual-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
+@media(max-width:860px){
+  body{display:block}
+  aside{height:auto;border-right:0;border-bottom:1px solid var(--border)}
+  #map{height:70vh}
+}
+</style>
+</head>
+<body>
+<aside>
+  <h1>Trait MMAP</h1>
+  <div class="brand-sub">Mapper for Mammals and Parasites</div>
+  <div class="subtitle">
+    Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
+    filter records interactively, select them spatially, and export research-ready subsets.
+    Files are processed locally in your browser.
+  </div>
+
+  <div id="uploadSection">
+    <div class="section">1. Load a dataset</div>
+    <input id="csvFile" type="file" accept=".csv,text/csv">
+    <button id="loadExample" class="secondary">Load example dataset</button>
+    <div id="fileNote" class="small" style="margin-top:6px">No dataset loaded.</div>
+  </div>
+
+  <div id="mappingSection" class="hidden">
+    <div class="section">2. Map core fields</div>
+    <div class="small">Latitude and longitude are required. Other mappings improve popups, search, summaries, and temporal filtering.</div>
+
+    <div class="mapping-grid">
+      <div><label for="mapLat">Latitude *</label><select id="mapLat"></select></div>
+      <div><label for="mapLon">Longitude *</label><select id="mapLon"></select></div>
+      <div><label for="mapId">Record ID</label><select id="mapId"></select></div>
+      <div><label for="mapScientific">Scientific name</label><select id="mapScientific"></select></div>
+      <div><label for="mapDate">Date / year</label><select id="mapDate"></select></div>
+      <div><label for="mapCountry">Country</label><select id="mapCountry"></select></div>
+      <div><label for="mapState">State / province</label><select id="mapState"></select></div>
+      <div><label for="mapLocality">Locality</label><select id="mapLocality"></select></div>
+    </div>
+
+    <div class="section">3. Choose trait fields</div>
+    <div class="small">
+      Trait MMAP infers a useful filter type for each column. Check the fields you want available as interactive traits.
+      Numeric fields receive range filters; categorical fields receive value filters; text fields receive contains-search filters.
+    </div>
+    <div class="two" style="margin:7px 0">
+      <button id="selectSuggested" class="secondary">Select suggested traits</button>
+      <button id="clearTraitChoices" class="secondary">Clear trait choices</button>
+    </div>
+    <div id="traitList" class="trait-list"></div>
+
+    <button id="startExploring" class="primary">Build interactive map</button>
+  </div>
+
+  <div id="exploreSection" class="hidden">
+    <div class="section">Dataset summary</div>
+    <div class="stats">
+      <div class="stat"><strong id="nRows">—</strong><span>input rows</span></div>
+      <div class="stat"><strong id="nMappable">—</strong><span>mappable records</span></div>
+      <div class="stat"><strong id="nVisible">—</strong><span>visible records</span></div>
+      <div class="stat"><strong id="nSelected">0</strong><span>selected records</span></div>
+    </div>
+    <div id="validationNote" class="note small"></div>
+
+    <div class="section">Search & time</div>
+    <label for="globalSearch">Search all fields</label>
+    <input id="globalSearch" type="text" placeholder="taxon, catalog number, locality, trait value…">
+    <div id="yearFilterBlock" class="hidden">
+      <label>Collection year</label>
+      <div class="range-row">
+        <input id="yearMin" type="number" placeholder="Minimum year">
+        <input id="yearMax" type="number" placeholder="Maximum year">
+      </div>
+      <label class="check-inline"><input id="includeUnknownYear" type="checkbox" checked> Include records with unknown year</label>
+    </div>
+
+    <div class="section">Trait filters</div>
+    <div id="traitFilters"></div>
+    <div id="traitFiltersEmpty" class="small">No trait fields were selected.</div>
+
+    <div class="section">Trait visualization</div>
+    <div class="visual-row">
+      <div>
+        <label for="colorBy">Color by</label>
+        <select id="colorBy"><option value="">None</option></select>
+      </div>
+      <div>
+        <label for="sizeBy">Size by</label>
+        <select id="sizeBy"><option value="">None</option></select>
+      </div>
+    </div>
+    <div class="small" style="margin-top:5px">
+      “Color by” is intended for categorical traits; “Size by” is intended for numeric traits.
+    </div>
+
+    <div class="section">Spatial selection</div>
+    <div class="small">
+      Left-click a point to inspect it. Right-click a point to add/remove it from the selection.
+      Use the polygon tool on the map to select all currently visible records inside an area.
+    </div>
+    <div class="two">
+      <button id="clearSelection" class="secondary">Clear selection</button>
+      <button id="clearPolygon" class="secondary">Clear polygon</button>
+    </div>
+
+    <div class="section">Export</div>
+    <div class="small">
+      Exports preserve every original column from the uploaded CSV. Trait MMAP adds only a few helper columns describing selection and parsed coordinates/year.
+    </div>
+    <button id="downloadFiltered" class="primary">Download filtered records</button>
+    <button id="downloadSelected" class="secondary">Download selected records</button>
+
+    <div class="section">Dataset controls</div>
+    <button id="remapDataset" class="secondary">Change field mappings / traits</button>
+    <button id="replaceDataset" class="danger">Load a different dataset</button>
+
+    <div id="statusBanner" class="note small good"></div>
+  </div>
+
+  <footer class="small">
+    <strong>Trait MMAP</strong> is a client-side research interface. Uploaded files are not transmitted by this application.
+    Always retain and cite the authoritative source of your underlying data.
+  </footer>
+</aside>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<script>
+"use strict";
+
+// ============================================================================
+// Trait MMAP — upload-first browser application
+// ============================================================================
+// Design principles:
+//   1. User data are the primary input; there is no required static tracker.json.
+//   2. Original rows are preserved exactly for export.
+//   3. Core map fields are mapped explicitly.
+//   4. Trait filters are generated dynamically from columns selected by the user.
+//   5. Spatial selection operates on the currently visible records.
+//   6. Uploaded data remain in browser memory only.
+// ============================================================================
+
+const $ = id => document.getElementById(id);
+
+const state = {
+  fileName: "",
+  headers: [],
+  rows: [],            // original row objects exactly as parsed
+  records: [],         // normalized map helpers referencing original row index
+  mappings: {},
+  traitDefs: [],
+  traitFilters: new Map(),
+  selected: new Set(), // original row indexes
+  visible: new Set(),  // original row indexes
+  markers: new Map(),
+  invalidCoordinateRows: [],
+  yearExtent: null
+};
+
+// ---------------------------------------------------------------------------
+// Map
+// ---------------------------------------------------------------------------
+const map = L.map("map", { preferCanvas: true }).setView([39, -98], 4);
+
+const street = L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }
+).addTo(map);
+
+const topo = L.tileLayer(
+  "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+  { maxZoom: 17, attribution: "Map data &copy; OpenStreetMap contributors | Map style &copy; OpenTopoMap" }
+);
+
+const satellite = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 19, attribution: "Tiles &copy; Esri" }
+);
+
+L.control.layers(
+  { "Street": street, "Topographic": topo, "Satellite": satellite },
+  null,
+  { collapsed: true }
+).addTo(map);
+
+const cluster = L.markerClusterGroup({
+  chunkedLoading: true,
+  chunkInterval: 100,
+  chunkDelay: 25,
+  showCoverageOnHover: false,
+  maxClusterRadius: 45
+}).addTo(map);
+
+const drawnItems = new L.FeatureGroup().addTo(map);
+const drawControl = new L.Control.Draw({
+  position: "topleft",
+  draw: {
+    polyline: false,
+    rectangle: false,
+    circle: false,
+    circlemarker: false,
+    marker: false,
+    polygon: { allowIntersection: false, showArea: true }
+  },
+  edit: {
+    featureGroup: drawnItems,
+    edit: false,
+    remove: true
+  }
+});
+map.addControl(drawControl);
+
+// ---------------------------------------------------------------------------
+// General helpers
+// ---------------------------------------------------------------------------
+function esc(v) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function normalizeHeader(s) {
+  return String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function parseFinite(v) {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const n = Number(String(v).trim().replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseYear(v) {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const raw = String(v).trim();
+
+  // Standalone four-digit year.
+  if (/^(17|18|19|20|21)\d{2}$/.test(raw)) return Number(raw);
+
+  // Common date strings.
+  const match = raw.match(/\b((?:17|18|19|20|21)\d{2})\b/);
+  if (match) return Number(match[1]);
+
+  // Excel/JS-parsable date as fallback.
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    if (y >= 1700 && y <= 2199) return y;
+  }
+  return null;
+}
+
+function uniqueNonBlank(values) {
+  return [...new Set(values.map(v => String(v ?? "").trim()).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
+}
+
+function csvDownload(rows, filename) {
+  if (!rows.length) {
+    alert("There are no records to download.");
+    return;
+  }
+  const csv = Papa.unparse(rows, { quotes: true, newline: "\r\n" });
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function safeFileStem(name) {
+  return String(name || "trait_mmap_dataset")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "trait_mmap_dataset";
+}
+
+function showStatus(text, kind="good") {
+  const el = $("statusBanner");
+  el.textContent = text;
+  el.className = `note small ${kind}`;
+}
+
+function setStage(stage) {
+  $("mappingSection").classList.toggle("hidden", stage === "upload");
+  $("exploreSection").classList.toggle("hidden", stage !== "explore");
+}
+
+// ---------------------------------------------------------------------------
+// Example dataset
+// ---------------------------------------------------------------------------
+const EXAMPLE_CSV = `record_id,scientific_name,family,sex,life_stage,body_mass_g,total_length_mm,habitat,parasite_group,collection_date,country,state_province,locality,latitude,longitude
+TM001,Peromyscus leucopus,Cricetidae,male,adult,23.4,182,woodland,Siphonaptera,2023-05-14,United States,Kansas,Konza Prairie,39.091,-96.583
+TM002,Peromyscus leucopus,Cricetidae,female,adult,21.8,176,woodland,Acari,2023-05-15,United States,Kansas,Konza Prairie,39.102,-96.575
+TM003,Peromyscus maniculatus,Cricetidae,male,adult,18.1,169,grassland,Siphonaptera,2019-06-03,United States,Kansas,Smoky Hills,38.781,-98.128
+TM004,Microtus ochrogaster,Cricetidae,female,adult,42.0,151,grassland,Cestoda,2022-04-22,United States,Kansas,Flint Hills,38.722,-96.448
+TM005,Sigmodon hispidus,Cricetidae,male,adult,87.6,241,grassland,Acari,2024-07-18,United States,Kansas,Scott Wildlife Area,38.678,-100.916
+TM006,Sigmodon hispidus,Cricetidae,female,juvenile,52.3,205,grassland,Anoplura,2024-07-18,United States,Kansas,Scott Wildlife Area,38.682,-100.903
+TM007,Neotoma floridana,Cricetidae,female,adult,231.5,354,woodland,Cestoda,2021-09-09,United States,Kansas,Konza Prairie,39.083,-96.571
+TM008,Reithrodontomys fulvescens,Cricetidae,male,adult,12.8,147,grassland,Siphonaptera,2025-07-17,United States,Kansas,Western Kansas,38.940,-101.151
+TM009,Baiomys taylori,Cricetidae,female,adult,8.9,108,grassland,Acari,2025-07-11,United States,Kansas,Cimarron Grassland,37.118,-101.868
+TM010,Peromyscus leucopus,Cricetidae,female,juvenile,16.4,151,edge,Cestoda,2017-08-21,United States,Missouri,Tallgrass remnant,39.261,-94.852
+TM011,Microtus ochrogaster,Cricetidae,male,adult,46.2,158,grassland,,2016-05-02,United States,Nebraska,Prairie site,40.821,-98.291
+TM012,Neotoma floridana,Cricetidae,male,adult,268.1,371,woodland,Siphonaptera,2020-10-13,United States,Oklahoma,Cross Timbers,35.552,-97.311`;
+
+function loadExample() {
+  parseDatasetText(EXAMPLE_CSV, "Trait_MMAP_example.csv");
+}
+
+// ---------------------------------------------------------------------------
+// CSV parsing and mapping setup
+// ---------------------------------------------------------------------------
+function parseDatasetText(text, fileName) {
+  const parsed = Papa.parse(text, {
+    header: true,
+    skipEmptyLines: "greedy",
+    dynamicTyping: false,
+    transformHeader: h => String(h).trim()
+  });
+
+  if (parsed.errors && parsed.errors.length) {
+    const fatal = parsed.errors.filter(e => e.type === "Quotes" || e.type === "Delimiter");
+    if (fatal.length) {
+      alert("The CSV could not be parsed reliably. Check delimiters and quoted fields.");
+      console.error(parsed.errors);
+      return;
+    }
+  }
+
+  const headers = parsed.meta.fields || [];
+  if (!headers.length || !parsed.data.length) {
+    alert("The CSV does not contain a header row and data rows.");
+    return;
+  }
+
+  resetDataState();
+  state.fileName = fileName;
+  state.headers = headers;
+  state.rows = parsed.data;
+  $("fileNote").textContent = `${fileName}: ${state.rows.length.toLocaleString()} data rows loaded.`;
+  buildMappingUI();
+  setStage("mapping");
+}
+
+function resetDataState() {
+  state.fileName = "";
+  state.headers = [];
+  state.rows = [];
+  state.records = [];
+  state.mappings = {};
+  state.traitDefs = [];
+  state.traitFilters.clear();
+  state.selected.clear();
+  state.visible.clear();
+  state.markers.clear();
+  state.invalidCoordinateRows = [];
+  state.yearExtent = null;
+
+  cluster.clearLayers();
+  drawnItems.clearLayers();
+}
+
+function fillColumnSelect(id, required=false) {
+  const el = $(id);
+  el.innerHTML = "";
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = required ? "— choose column —" : "— none —";
+  el.appendChild(blank);
+  state.headers.forEach(h => {
+    const o = document.createElement("option");
+    o.value = h;
+    o.textContent = h;
+    el.appendChild(o);
+  });
+}
+
+function guessHeader(patterns, exclude=[]) {
+  const normalized = state.headers.map(h => normalizeHeader(h));
+  const excluded = new Set(exclude.map(normalizeHeader));
+
+  for (const p of patterns) {
+    const exact = normalized.findIndex((h,i) => !excluded.has(h) && h === p);
+    if (exact >= 0) return state.headers[exact];
+  }
+  for (const p of patterns) {
+    const partial = normalized.findIndex((h,i) => !excluded.has(h) && h.includes(p));
+    if (partial >= 0) return state.headers[partial];
+  }
+  return "";
+}
+
+function setGuess(id, patterns) {
+  const v = guessHeader(patterns);
+  if (v) $(id).value = v;
+}
+
+function inferColumnType(header) {
+  const values = state.rows
+    .slice(0, Math.min(state.rows.length, 2000))
+    .map(r => String(r[header] ?? "").trim())
+    .filter(Boolean);
+
+  if (!values.length) return "text";
+
+  const numericCount = values.filter(v => parseFinite(v) !== null).length;
+  if (numericCount / values.length >= 0.9) return "numeric";
+
+  const unique = new Set(values).size;
+  const ratio = unique / values.length;
+  if (unique <= 50 || (unique <= 150 && ratio <= 0.2)) return "categorical";
+
+  return "text";
+}
+
+function isLikelyUsefulTrait(header, type) {
+  const n = normalizeHeader(header);
+  const excludedCore = [
+    "latitude","longitude","decimallatitude","decimallongitude",
+    "guid","catalognumber","recordid","occurrenceid","eventdate","date",
+    "country","stateprovince","state","locality","scientificname"
+  ];
+  if (excludedCore.some(x => n === x)) return false;
+
+  const preferred = [
+    "sex","gender","lifestage","age","weight","mass","length","tail",
+    "hindfoot","ear","reproductive","habitat","family","genus","species",
+    "order","diet","parasite","infection","prevalence","body"
+  ];
+  return preferred.some(x => n.includes(x)) || type === "categorical";
+}
+
+function buildMappingUI() {
+  [
+    ["mapLat", true], ["mapLon", true], ["mapId", false], ["mapScientific", false],
+    ["mapDate", false], ["mapCountry", false], ["mapState", false], ["mapLocality", false]
+  ].forEach(([id,required]) => fillColumnSelect(id, required));
+
+  setGuess("mapLat", ["decimallatitude","declat","latitude","lat"]);
+  setGuess("mapLon", ["decimallongitude","declong","longitude","lon","long"]);
+  setGuess("mapId", ["occurrenceid","recordid","catalognumber","catalognumber","guid","specimenid","id"]);
+  setGuess("mapScientific", ["scientificname","hostscientificname","species","taxon"]);
+  setGuess("mapDate", ["eventdate","collectiondate","verbatimdate","date","year"]);
+  setGuess("mapCountry", ["country"]);
+  setGuess("mapState", ["stateprovince","stateprov","state"]);
+  setGuess("mapLocality", ["specificlocality","speclocality","locality"]);
+
+  buildTraitChoiceList();
+}
+
+function buildTraitChoiceList() {
+  const container = $("traitList");
+  container.innerHTML = "";
+
+  state.headers.forEach((header, idx) => {
+    const type = inferColumnType(header);
+    const row = document.createElement("div");
+    row.className = "trait-row";
+    row.dataset.header = header;
+
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "trait-check";
+    check.dataset.header = header;
+    check.checked = isLikelyUsefulTrait(header, type);
+
+    const name = document.createElement("div");
+    name.className = "trait-name";
+    name.title = header;
+    name.textContent = header;
+
+    const select = document.createElement("select");
+    select.className = "trait-type";
+    select.dataset.header = header;
+    ["categorical","numeric","text"].forEach(t => {
+      const o = document.createElement("option");
+      o.value = t;
+      o.textContent = t;
+      if (t === type) o.selected = true;
+      select.appendChild(o);
+    });
+
+    row.append(check, name, select);
+    container.appendChild(row);
+  });
+}
+
+function readMappings() {
+  return {
+    lat: $("mapLat").value,
+    lon: $("mapLon").value,
+    id: $("mapId").value,
+    scientific: $("mapScientific").value,
+    date: $("mapDate").value,
+    country: $("mapCountry").value,
+    state: $("mapState").value,
+    locality: $("mapLocality").value
+  };
+}
+
+function readTraitDefs() {
+  const defs = [];
+  document.querySelectorAll(".trait-row").forEach(row => {
+    const check = row.querySelector(".trait-check");
+    const type = row.querySelector(".trait-type").value;
+    if (check.checked) defs.push({ field: row.dataset.header, type });
+  });
+
+  // Do not duplicate coordinates as traits even if selected accidentally.
+  const m = readMappings();
+  return defs.filter(d => d.field !== m.lat && d.field !== m.lon);
+}
+
+// ---------------------------------------------------------------------------
+// Build normalized records
+// ---------------------------------------------------------------------------
+function buildRecords() {
+  const m = readMappings();
+  if (!m.lat || !m.lon) {
+    alert("Choose latitude and longitude columns before building the map.");
+    return false;
+  }
+
+  state.mappings = m;
+  state.traitDefs = readTraitDefs();
+  state.records = [];
+  state.invalidCoordinateRows = [];
+
+  const years = [];
+
+  state.rows.forEach((row, rowIndex) => {
+    const lat = parseFinite(row[m.lat]);
+    const lon = parseFinite(row[m.lon]);
+    const validCoords = lat !== null && lon !== null && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+
+    if (!validCoords) {
+      state.invalidCoordinateRows.push(rowIndex);
+      return;
+    }
+
+    const year = m.date ? parseYear(row[m.date]) : null;
+    if (year !== null) years.push(year);
+
+    state.records.push({
+      rowIndex,
+      lat,
+      lon,
+      year,
+      id: m.id ? String(row[m.id] ?? "").trim() : "",
+      scientific: m.scientific ? String(row[m.scientific] ?? "").trim() : "",
+      country: m.country ? String(row[m.country] ?? "").trim() : "",
+      state: m.state ? String(row[m.state] ?? "").trim() : "",
+      locality: m.locality ? String(row[m.locality] ?? "").trim() : ""
+    });
+  });
+
+  state.yearExtent = years.length ? [Math.min(...years), Math.max(...years)] : null;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic filter UI
+// ---------------------------------------------------------------------------
+function buildTraitFilters() {
+  const container = $("traitFilters");
+  container.innerHTML = "";
+  state.traitFilters.clear();
+
+  $("traitFiltersEmpty").classList.toggle("hidden", state.traitDefs.length > 0);
+
+  state.traitDefs.forEach(def => {
+    const card = document.createElement("div");
+    card.className = "filter-card";
+
+    const head = document.createElement("div");
+    head.className = "filter-head";
+    const label = document.createElement("label");
+    label.textContent = def.field;
+    const kind = document.createElement("span");
+    kind.textContent = def.type;
+    head.append(label, kind);
+    card.appendChild(head);
+
+    if (def.type === "numeric") {
+      const vals = state.rows
+        .map(r => parseFinite(r[def.field]))
+        .filter(v => v !== null);
+
+      if (!vals.length) return;
+
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const range = document.createElement("div");
+      range.className = "range-row";
+
+      const minInput = document.createElement("input");
+      minInput.type = "number";
+      minInput.step = "any";
+      minInput.placeholder = `Min ${min}`;
+      minInput.value = min;
+
+      const maxInput = document.createElement("input");
+      maxInput.type = "number";
+      maxInput.step = "any";
+      maxInput.placeholder = `Max ${max}`;
+      maxInput.value = max;
+
+      const includeMissing = document.createElement("label");
+      includeMissing.className = "check-inline";
+      const missingCheck = document.createElement("input");
+      missingCheck.type = "checkbox";
+      missingCheck.checked = true;
+      includeMissing.append(missingCheck, document.createTextNode("Include missing values"));
+
+      const filter = { type:"numeric", field:def.field, minInput, maxInput, missingCheck, domain:[min,max] };
+      state.traitFilters.set(def.field, filter);
+
+      [minInput,maxInput].forEach(el => el.addEventListener("input", render));
+      missingCheck.addEventListener("change", render);
+
+      range.append(minInput,maxInput);
+      card.append(range, includeMissing);
+    }
+
+    if (def.type === "categorical") {
+      const vals = uniqueNonBlank(state.rows.map(r => r[def.field]));
+      const select = document.createElement("select");
+      select.innerHTML = `<option value="">All values</option>`;
+      vals.forEach(v => {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        select.appendChild(o);
+      });
+
+      const includeMissing = document.createElement("label");
+      includeMissing.className = "check-inline";
+      const missingCheck = document.createElement("input");
+      missingCheck.type = "checkbox";
+      missingCheck.checked = true;
+      includeMissing.append(missingCheck, document.createTextNode("Include missing values"));
+
+      const filter = { type:"categorical", field:def.field, select, missingCheck };
+      state.traitFilters.set(def.field, filter);
+
+      select.addEventListener("change", render);
+      missingCheck.addEventListener("change", render);
+
+      card.append(select, includeMissing);
+    }
+
+    if (def.type === "text") {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Contains…";
+
+      const filter = { type:"text", field:def.field, input };
+      state.traitFilters.set(def.field, filter);
+
+      input.addEventListener("input", render);
+      card.appendChild(input);
+    }
+
+    container.appendChild(card);
+  });
+
+  buildVisualizationMenus();
+}
+
+function buildVisualizationMenus() {
+  const color = $("colorBy");
+  const size = $("sizeBy");
+  color.innerHTML = `<option value="">None</option>`;
+  size.innerHTML = `<option value="">None</option>`;
+
+  state.traitDefs.forEach(def => {
+    if (def.type === "categorical") {
+      const o = document.createElement("option");
+      o.value = def.field; o.textContent = def.field;
+      color.appendChild(o);
+    }
+    if (def.type === "numeric") {
+      const o = document.createElement("option");
+      o.value = def.field; o.textContent = def.field;
+      size.appendChild(o);
+    }
+  });
+}
+
+function setupYearFilter() {
+  const block = $("yearFilterBlock");
+  if (!state.mappings.date || !state.yearExtent) {
+    block.classList.add("hidden");
+    $("yearMin").value = "";
+    $("yearMax").value = "";
+    return;
+  }
+
+  block.classList.remove("hidden");
+  $("yearMin").value = state.yearExtent[0];
+  $("yearMax").value = state.yearExtent[1];
+  $("includeUnknownYear").checked = true;
+}
+
+// ---------------------------------------------------------------------------
+// Filtering
+// ---------------------------------------------------------------------------
+function traitPasses(row) {
+  for (const filter of state.traitFilters.values()) {
+    const raw = String(row[filter.field] ?? "").trim();
+
+    if (filter.type === "numeric") {
+      const n = parseFinite(raw);
+      if (n === null) {
+        if (!filter.missingCheck.checked) return false;
+        continue;
+      }
+      const min = filter.minInput.value === "" ? -Infinity : Number(filter.minInput.value);
+      const max = filter.maxInput.value === "" ? Infinity : Number(filter.maxInput.value);
+      if (Number.isFinite(min) && n < min) return false;
+      if (Number.isFinite(max) && n > max) return false;
+    }
+
+    if (filter.type === "categorical") {
+      if (!raw) {
+        if (!filter.missingCheck.checked) return false;
+        continue;
+      }
+      if (filter.select.value && raw !== filter.select.value) return false;
+    }
+
+    if (filter.type === "text") {
+      const q = filter.input.value.trim().toLowerCase();
+      if (q && !raw.toLowerCase().includes(q)) return false;
+    }
+  }
+  return true;
+}
+
+function recordPasses(rec) {
+  const row = state.rows[rec.rowIndex];
+
+  const q = $("globalSearch").value.trim().toLowerCase();
+  if (q) {
+    const haystack = state.headers.map(h => row[h] ?? "").join(" ").toLowerCase();
+    if (!haystack.includes(q)) return false;
+  }
+
+  if (state.mappings.date && state.yearExtent) {
+    const minY = $("yearMin").value === "" ? -Infinity : Number($("yearMin").value);
+    const maxY = $("yearMax").value === "" ? Infinity : Number($("yearMax").value);
+    if (rec.year === null) {
+      if (!$("includeUnknownYear").checked) return false;
+    } else {
+      if (Number.isFinite(minY) && rec.year < minY) return false;
+      if (Number.isFinite(maxY) && rec.year > maxY) return false;
+    }
+  }
+
+  return traitPasses(row);
+}
+
+// ---------------------------------------------------------------------------
+// Marker visualization
+// ---------------------------------------------------------------------------
+function categoricalColor(field, value) {
+  if (!field || !value) return "#2f6f56";
+  const s = String(value);
+  let hash = 0;
+  for (let i=0;i<s.length;i++) hash = ((hash << 5) - hash) + s.charCodeAt(i);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue},55%,42%)`;
+}
+
+function numericRadius(field, row) {
+  if (!field) return 6;
+  const filter = state.traitFilters.get(field);
+  const n = parseFinite(row[field]);
+  if (!filter || n === null || filter.type !== "numeric") return 5;
+
+  const [min,max] = filter.domain;
+  if (max === min) return 7;
+  const t = Math.max(0, Math.min(1, (n-min)/(max-min)));
+  return 4 + 8*Math.sqrt(t);
+}
+
+function markerStyle(rec) {
+  const row = state.rows[rec.rowIndex];
+  const colorField = $("colorBy").value;
+  const sizeField = $("sizeBy").value;
+  const fill = categoricalColor(colorField, colorField ? row[colorField] : "");
+  return {
+    radius: numericRadius(sizeField, row),
+    weight: state.selected.has(rec.rowIndex) ? 3 : 1.5,
+    color: state.selected.has(rec.rowIndex) ? "#111" : "#fff",
+    fillColor: fill,
+    fillOpacity: .84
+  };
+}
+
+function recordPopup(rec) {
+  const row = state.rows[rec.rowIndex];
+  const title = rec.scientific || rec.id || `Row ${rec.rowIndex + 2}`;
+
+  const core = [];
+  if (rec.id) core.push(["Record ID", rec.id]);
+  if (rec.scientific) core.push(["Scientific name", rec.scientific]);
+  if (rec.year !== null) core.push(["Year", rec.year]);
+  if (rec.country) core.push(["Country", rec.country]);
+  if (rec.state) core.push(["State / province", rec.state]);
+  if (rec.locality) core.push(["Locality", rec.locality]);
+  core.push(["Latitude", rec.lat], ["Longitude", rec.lon]);
+
+  const traitRows = state.traitDefs
+    .map(d => [d.field, row[d.field]])
+    .filter(([,v]) => String(v ?? "").trim() !== "");
+
+  const allRows = state.headers
+    .map(h => [h, row[h]])
+    .filter(([,v]) => String(v ?? "").trim() !== "");
+
+  const makeGrid = pairs => `<div class="popup-grid">${
+    pairs.map(([k,v]) => `<div class="popup-key">${esc(k)}</div><div>${esc(v)}</div>`).join("")
+  }</div>`;
+
+  return `
+    <div class="popup-title"><i>${esc(title)}</i></div>
+    ${makeGrid(core)}
+    ${traitRows.length ? `<div class="popup-section"><b>Selected traits</b>${makeGrid(traitRows)}</div>` : ""}
+    <details class="popup-section">
+      <summary><b>All uploaded fields</b></summary>
+      ${makeGrid(allRows)}
+    </details>
+    <div class="popup-section small">
+      Left-click inspects this record. Right-click selects or deselects it for export.
+    </div>`;
+}
+
+function toggleSelection(rowIndex) {
+  if (state.selected.has(rowIndex)) state.selected.delete(rowIndex);
+  else state.selected.add(rowIndex);
+  updateSelectionCount();
+  render();
+}
+
+function render() {
+  if (!state.records.length) return;
+
+  cluster.clearLayers();
+  state.visible.clear();
+  state.markers.clear();
+
+  const layers = [];
+
+  for (const rec of state.records) {
+    if (!recordPasses(rec)) continue;
+
+    state.visible.add(rec.rowIndex);
+    const marker = L.circleMarker([rec.lat, rec.lon], markerStyle(rec));
+    marker.bindPopup(recordPopup(rec));
+
+    marker.on("contextmenu", e => {
+      L.DomEvent.stopPropagation(e);
+      if (e.originalEvent) L.DomEvent.preventDefault(e.originalEvent);
+      toggleSelection(rec.rowIndex);
+    });
+
+    state.markers.set(rec.rowIndex, marker);
+    layers.push(marker);
+  }
+
+  cluster.addLayers(layers);
+  $("nVisible").textContent = state.visible.size.toLocaleString();
+  updateSelectionCount();
+  showStatus(
+    `${state.visible.size.toLocaleString()} of ${state.records.length.toLocaleString()} mappable records match the current filters.`
+  );
+}
+
+function updateSelectionCount() {
+  $("nSelected").textContent = state.selected.size.toLocaleString();
+}
+
+// ---------------------------------------------------------------------------
+// Spatial selection
+// ---------------------------------------------------------------------------
+function pointInPolygon(lat, lon, ring) {
+  let inside = false;
+  for (let i=0, j=ring.length-1; i<ring.length; j=i++) {
+    const xi=ring[i].lng, yi=ring[i].lat;
+    const xj=ring[j].lng, yj=ring[j].lat;
+    const intersects = ((yi > lat) !== (yj > lat)) &&
+      (lon < (xj-xi) * (lat-yi) / (yj-yi) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+map.on(L.Draw.Event.CREATED, e => {
+  drawnItems.clearLayers();
+  drawnItems.addLayer(e.layer);
+
+  const ring = e.layer.getLatLngs()[0];
+  state.selected.clear();
+
+  for (const rec of state.records) {
+    if (!state.visible.has(rec.rowIndex)) continue;
+    if (pointInPolygon(rec.lat, rec.lon, ring)) state.selected.add(rec.rowIndex);
+  }
+  render();
+});
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+function exportRows(rowIndexes, suffix) {
+  const ordered = [...rowIndexes].sort((a,b) => a-b);
+  const rows = ordered.map(rowIndex => {
+    const original = { ...state.rows[rowIndex] };
+    const rec = state.records.find(r => r.rowIndex === rowIndex);
+    return {
+      ...original,
+      trait_mmap_selected: state.selected.has(rowIndex) ? "yes" : "no",
+      trait_mmap_latitude: rec ? rec.lat : "",
+      trait_mmap_longitude: rec ? rec.lon : "",
+      trait_mmap_year: rec && rec.year !== null ? rec.year : ""
+    };
+  });
+
+  csvDownload(rows, `${safeFileStem(state.fileName)}_${suffix}.csv`);
+}
+
+function downloadFiltered() {
+  exportRows(state.visible, "trait_mmap_filtered");
+}
+
+function downloadSelected() {
+  if (!state.selected.size) {
+    alert("No records are currently selected. Right-click points or draw a polygon first.");
+    return;
+  }
+  exportRows(state.selected, "trait_mmap_selected");
+}
+
+// ---------------------------------------------------------------------------
+// Start/remap/reset workflow
+// ---------------------------------------------------------------------------
+function beginExploration() {
+  if (!buildRecords()) return;
+
+  if (!state.records.length) {
+    alert("No rows contain valid latitude/longitude values after applying the selected coordinate columns.");
+    return;
+  }
+
+  buildTraitFilters();
+  setupYearFilter();
+
+  $("nRows").textContent = state.rows.length.toLocaleString();
+  $("nMappable").textContent = state.records.length.toLocaleString();
+
+  const invalid = state.invalidCoordinateRows.length;
+  $("validationNote").innerHTML =
+    `<b>${state.records.length.toLocaleString()}</b> rows contain valid coordinates. ` +
+    `<b>${invalid.toLocaleString()}</b> rows were excluded from mapping because coordinates were missing, non-numeric, or outside valid latitude/longitude bounds.` +
+    (invalid ? ` Excluded rows remain in the original uploaded file but are not included in filtered-map exports.` : "");
+
+  state.selected.clear();
+  setStage("explore");
+
+  const pts = state.records.map(r => [r.lat,r.lon]);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(.05));
+
+  render();
+}
+
+function remapDataset() {
+  setStage("mapping");
+}
+
+function replaceDataset() {
+  if (!confirm("Load a different dataset? Current browser-session mappings, filters, and selections will be cleared.")) return;
+  resetDataState();
+  $("csvFile").value = "";
+  $("fileNote").textContent = "No dataset loaded.";
+  $("mappingSection").classList.add("hidden");
+  $("exploreSection").classList.add("hidden");
+  map.setView([39,-98],4);
+}
+
+function resetFiltersOnly() {
+  $("globalSearch").value = "";
+  if (state.yearExtent) {
+    $("yearMin").value = state.yearExtent[0];
+    $("yearMax").value = state.yearExtent[1];
+    $("includeUnknownYear").checked = true;
+  }
+
+  for (const filter of state.traitFilters.values()) {
+    if (filter.type === "numeric") {
+      filter.minInput.value = filter.domain[0];
+      filter.maxInput.value = filter.domain[1];
+      filter.missingCheck.checked = true;
+    }
+    if (filter.type === "categorical") {
+      filter.select.value = "";
+      filter.missingCheck.checked = true;
+    }
+    if (filter.type === "text") filter.input.value = "";
+  }
+  render();
+}
+
+// ---------------------------------------------------------------------------
+// Event listeners
+// ---------------------------------------------------------------------------
+$("csvFile").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  parseDatasetText(await file.text(), file.name);
+});
+
+$("loadExample").addEventListener("click", loadExample);
+
+$("selectSuggested").addEventListener("click", () => {
+  document.querySelectorAll(".trait-row").forEach(row => {
+    const type = row.querySelector(".trait-type").value;
+    row.querySelector(".trait-check").checked = isLikelyUsefulTrait(row.dataset.header, type);
+  });
+});
+
+$("clearTraitChoices").addEventListener("click", () => {
+  document.querySelectorAll(".trait-check").forEach(el => el.checked = false);
+});
+
+$("startExploring").addEventListener("click", beginExploration);
+
+$("globalSearch").addEventListener("input", render);
+$("yearMin").addEventListener("input", render);
+$("yearMax").addEventListener("input", render);
+$("includeUnknownYear").addEventListener("change", render);
+$("colorBy").addEventListener("change", render);
+$("sizeBy").addEventListener("change", render);
+
+$("clearSelection").addEventListener("click", () => {
+  state.selected.clear();
+  render();
+});
+
+$("clearPolygon").addEventListener("click", () => {
+  drawnItems.clearLayers();
+});
+
+$("downloadFiltered").addEventListener("click", downloadFiltered);
+$("downloadSelected").addEventListener("click", downloadSelected);
+$("remapDataset").addEventListener("click", remapDataset);
+$("replaceDataset").addEventListener("click", replaceDataset);
+
+// Add a small reset-filter control to the Leaflet map itself.
+const ResetControl = L.Control.extend({
+  options:{ position:"topleft" },
+  onAdd(){
+    const div=L.DomUtil.create("div","leaflet-bar");
+    const a=L.DomUtil.create("a","",div);
+    a.href="#"; a.title="Reset filters"; a.innerHTML="↺";
+    a.style.fontSize="20px"; a.style.textAlign="center";
+    L.DomEvent.on(a,"click",L.DomEvent.stop)
+      .on(a,"click",L.DomEvent.preventDefault)
+      .on(a,"click",resetFiltersOnly);
+    return div;
+  }
+});
+map.addControl(new ResetControl());
+
+// Initial state.
+setStage("upload");
+</script>
+</body>
+</html>
