@@ -70,8 +70,11 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .check-inline input{width:auto}
 .leaflet-popup-content{min-width:270px;max-width:430px;max-height:480px;overflow:auto}
 .popup-title{font-size:1rem;font-weight:700;margin-bottom:3px}
-.popup-grid{display:grid;grid-template-columns:minmax(95px,35%) 1fr;gap:3px 8px;font-size:.78rem}
-.popup-key{font-weight:700;color:#4d5a61}
+.popup-grid{display:grid;grid-template-columns:minmax(0,42%) minmax(0,58%);gap:0;font-size:.78rem;border:1px solid #e8ecee;border-radius:5px;overflow:hidden}
+.popup-key,.popup-value{min-width:0;padding:4px 6px;border-bottom:1px solid #edf0f1;overflow-wrap:anywhere;word-break:break-word}
+.popup-key{font-weight:700;color:#4d5a61;background:#f5f7f8;border-right:1px solid #e8ecee}
+.popup-value{background:#fff}
+.popup-grid > :nth-last-child(-n+2){border-bottom:0}
 .guid{font-family:monospace;font-size:.73rem;color:#5b6870}
 .popup-section{margin-top:9px;padding-top:7px;border-top:1px solid #eee}
 .selected-marker{filter:drop-shadow(0 0 3px #111)}
@@ -142,6 +145,10 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
     </div>
     <div id="validationNote" class="note small"></div>
 
+    <div class="section">Core filters</div>
+    <div class="small">Mapped taxonomic and geographic fields use exact-match filters. This is separate from the trait filters below.</div>
+    <div id="coreFilters"></div>
+
     <div class="section">Search & time</div>
     <label for="globalSearch">Search all fields</label>
     <input id="globalSearch" type="text" placeholder="taxon, catalog number, locality, trait value…">
@@ -171,6 +178,21 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
     </div>
     <div class="small" style="margin-top:5px">
       “Color by” is intended for categorical traits; “Size by” is intended for numeric traits.
+    </div>
+
+    <div class="section">Historical weather overlays</div>
+    <div class="small">
+      Optional OpenWeather Weather Maps 2.0 overlays. Enter your own API key and choose a date/time.
+      The key is kept only in this browser session and is not saved by Trait MMAP.
+    </div>
+    <label for="weatherApiKey">OpenWeather API key</label>
+    <input id="weatherApiKey" type="text" placeholder="Enter API key">
+    <label for="weatherDate">Historical date and time</label>
+    <input id="weatherDate" type="datetime-local">
+    <button id="applyWeather" class="secondary">Prepare weather overlays</button>
+    <div id="weatherNote" class="small" style="margin-top:5px">
+      Weather Maps 2.0 historical tiles are available from 18 March 2019 for subscribed plans.
+      After preparing them, toggle Temperature or Precipitation from the Leaflet layer control.
     </div>
 
     <div class="section">Spatial selection</div>
@@ -235,6 +257,7 @@ const state = {
   mappings: {},
   traitDefs: [],
   traitFilters: new Map(),
+  coreFilters: new Map(),
   selected: new Set(), // original row indexes
   visible: new Set(),  // original row indexes
   markers: new Map(),
@@ -262,9 +285,9 @@ const satellite = L.tileLayer(
   { maxZoom: 19, attribution: "Tiles &copy; Esri" }
 );
 
-L.control.layers(
+const layerControl = L.control.layers(
   { "Street": street, "Topographic": topo, "Satellite": satellite },
-  null,
+  {},
   { collapsed: true }
 ).addTo(map);
 
@@ -378,24 +401,151 @@ function setStage(stage) {
 }
 
 // ---------------------------------------------------------------------------
-// Example dataset
+// Example dataset: previous Trait MMAP tracker.json
 // ---------------------------------------------------------------------------
-const EXAMPLE_CSV = `record_id,scientific_name,family,sex,life_stage,body_mass_g,total_length_mm,habitat,parasite_group,collection_date,country,state_province,locality,latitude,longitude
-TM001,Peromyscus leucopus,Cricetidae,male,adult,23.4,182,woodland,Siphonaptera,2023-05-14,United States,Kansas,Konza Prairie,39.091,-96.583
-TM002,Peromyscus leucopus,Cricetidae,female,adult,21.8,176,woodland,Acari,2023-05-15,United States,Kansas,Konza Prairie,39.102,-96.575
-TM003,Peromyscus maniculatus,Cricetidae,male,adult,18.1,169,grassland,Siphonaptera,2019-06-03,United States,Kansas,Smoky Hills,38.781,-98.128
-TM004,Microtus ochrogaster,Cricetidae,female,adult,42.0,151,grassland,Cestoda,2022-04-22,United States,Kansas,Flint Hills,38.722,-96.448
-TM005,Sigmodon hispidus,Cricetidae,male,adult,87.6,241,grassland,Acari,2024-07-18,United States,Kansas,Scott Wildlife Area,38.678,-100.916
-TM006,Sigmodon hispidus,Cricetidae,female,juvenile,52.3,205,grassland,Anoplura,2024-07-18,United States,Kansas,Scott Wildlife Area,38.682,-100.903
-TM007,Neotoma floridana,Cricetidae,female,adult,231.5,354,woodland,Cestoda,2021-09-09,United States,Kansas,Konza Prairie,39.083,-96.571
-TM008,Reithrodontomys fulvescens,Cricetidae,male,adult,12.8,147,grassland,Siphonaptera,2025-07-17,United States,Kansas,Western Kansas,38.940,-101.151
-TM009,Baiomys taylori,Cricetidae,female,adult,8.9,108,grassland,Acari,2025-07-11,United States,Kansas,Cimarron Grassland,37.118,-101.868
-TM010,Peromyscus leucopus,Cricetidae,female,juvenile,16.4,151,edge,Cestoda,2017-08-21,United States,Missouri,Tallgrass remnant,39.261,-94.852
-TM011,Microtus ochrogaster,Cricetidae,male,adult,46.2,158,grassland,,2016-05-02,United States,Nebraska,Prairie site,40.821,-98.291
-TM012,Neotoma floridana,Cricetidae,male,adult,268.1,371,woodland,Siphonaptera,2020-10-13,United States,Oklahoma,Cross Timbers,35.552,-97.311`;
+// The bundled example is the previous host-focused Trait MMAP dataset.
+// It is converted in the browser to one row per biological mammal host so that
+// the example uses the same upload-first filtering system as any user dataset.
+// Parasite records linked to each host are summarized into count/list columns.
+//
+function trackerString(D, idx) {
+  if (idx === null || idx === undefined || idx === -1) return "";
+  return D.s[idx] ?? "";
+}
 
-function loadExample() {
-  parseDatasetText(EXAMPLE_CSV, "Trait_MMAP_example.csv");
+function trackerHost(D, i) {
+  const x = D.h[i];
+  return {
+    biological_host_id: trackerString(D,x[0]),
+    scientific_name: trackerString(D,x[1]),
+    family: trackerString(D,x[2]),
+    genus: trackerString(D,x[3]),
+    species: trackerString(D,x[4]),
+    sex: trackerString(D,x[5]),
+    life_stage: trackerString(D,x[6]),
+    weight: x[7] ?? "",
+    total_length: x[8] ?? "",
+    tail_length: x[9] ?? "",
+    hind_foot_with_claw: x[10] ?? "",
+    ear_from_notch: x[11] ?? "",
+    reproductive_data: trackerString(D,x[12]),
+    collection_date: trackerString(D,x[13]),
+    collection_year: x[14] ?? "",
+    country: trackerString(D,x[15]),
+    state_province: trackerString(D,x[16]),
+    county: trackerString(D,x[17]),
+    locality: trackerString(D,x[18]),
+    latitude: x[19],
+    longitude: x[20],
+    coordinate_uncertainty_m: x[21] ?? "",
+    host_record_indexes: x[22] || []
+  };
+}
+
+function trackerHostRecord(D, i) {
+  const x = D.hr[i];
+  return {
+    source: trackerString(D,x[0]),
+    guid: trackerString(D,x[1])
+  };
+}
+
+function trackerParasite(D, i) {
+  const x = D.p[i];
+  return {
+    name: trackerString(D,x[3]),
+    family: trackerString(D,x[8])
+  };
+}
+
+function trackerAssociation(D, i) {
+  const x = D.a[i];
+  return { hid:x[0], pid:x[1] };
+}
+
+async function loadExample() {
+  $("fileNote").textContent = "Loading bundled Trait MMAP example data…";
+  try {
+    const resp = await fetch("data/tracker.json");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const D = await resp.json();
+
+    const assocByHost = Array.from({length:D.h.length}, () => []);
+    D.a.forEach((_,i) => {
+      const a = trackerAssociation(D,i);
+      if (a.hid >= 0 && a.hid < assocByHost.length) assocByHost[a.hid].push(a.pid);
+    });
+
+    const rows = D.h.map((_,hid) => {
+      const h = trackerHost(D,hid);
+      const parasiteIds = assocByHost[hid] || [];
+      const parasiteNames = [...new Set(parasiteIds.map(pid => trackerParasite(D,pid).name).filter(Boolean))].sort();
+      const parasiteFamilies = [...new Set(parasiteIds.map(pid => trackerParasite(D,pid).family).filter(Boolean))].sort();
+
+      const records = h.host_record_indexes.map(i => trackerHostRecord(D,i));
+      const guids = records.map(r => r.guid).filter(Boolean);
+      const collections = [...new Set(records.map(r => r.source).filter(Boolean))].sort();
+
+      return {
+        biological_host_id: h.biological_host_id,
+        scientific_name: h.scientific_name,
+        family: h.family,
+        genus: h.genus,
+        species: h.species,
+        sex: h.sex,
+        life_stage: h.life_stage,
+        weight: h.weight,
+        total_length: h.total_length,
+        tail_length: h.tail_length,
+        hind_foot_with_claw: h.hind_foot_with_claw,
+        ear_from_notch: h.ear_from_notch,
+        reproductive_data: h.reproductive_data,
+        collection_date: h.collection_date,
+        collection_year: h.collection_year,
+        country: h.country,
+        state_province: h.state_province,
+        county: h.county,
+        locality: h.locality,
+        latitude: h.latitude,
+        longitude: h.longitude,
+        coordinate_uncertainty_m: h.coordinate_uncertainty_m,
+        source_collections: collections.join("; "),
+        host_guids: guids.join("; "),
+        parasite_record_count: parasiteIds.length,
+        parasite_taxon_count: parasiteNames.length,
+        parasite_taxa: parasiteNames.join("; "),
+        parasite_families: parasiteFamilies.join("; ")
+      };
+    });
+
+    loadRowsDirect(rows, Object.keys(rows[0] || {}), "Trait_MMAP_previous_tracker_example.csv");
+
+    // Explicit mappings for the bundled example.
+    $("mapLat").value = "latitude";
+    $("mapLon").value = "longitude";
+    $("mapId").value = "biological_host_id";
+    $("mapScientific").value = "scientific_name";
+    $("mapDate").value = "collection_year";
+    $("mapCountry").value = "country";
+    $("mapState").value = "state_province";
+    $("mapLocality").value = "locality";
+
+    $("fileNote").textContent =
+      `Trait MMAP previous tracker example: ${rows.length.toLocaleString()} biological host rows loaded.`;
+  } catch (err) {
+    console.error(err);
+    $("fileNote").textContent = "Example dataset could not be loaded.";
+    alert("The bundled tracker.json example could not be loaded. Open Trait MMAP through GitHub Pages or a local HTTP server.");
+  }
+}
+
+function loadRowsDirect(rows, headers, fileName) {
+  resetDataState();
+  state.fileName = fileName;
+  state.headers = headers;
+  state.rows = rows;
+  buildMappingUI();
+  setStage("mapping");
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +591,7 @@ function resetDataState() {
   state.mappings = {};
   state.traitDefs = [];
   state.traitFilters.clear();
+  state.coreFilters.clear();
   state.selected.clear();
   state.visible.clear();
   state.markers.clear();
@@ -509,7 +660,7 @@ function isLikelyUsefulTrait(header, type) {
   const excludedCore = [
     "latitude","longitude","decimallatitude","decimallongitude",
     "guid","catalognumber","recordid","occurrenceid","eventdate","date",
-    "country","stateprovince","state","locality","scientificname"
+    "scientificname"
   ];
   if (excludedCore.some(x => n === x)) return false;
 
@@ -650,6 +801,66 @@ function buildRecords() {
 }
 
 // ---------------------------------------------------------------------------
+// Core exact-match filters
+// ---------------------------------------------------------------------------
+function buildCoreFilters() {
+  const container = $("coreFilters");
+  container.innerHTML = "";
+  state.coreFilters = new Map();
+
+  const candidates = [
+    ["scientific", "Scientific name"],
+    ["country", "Country"],
+    ["state", "State / province"],
+    ["locality", "Locality"]
+  ];
+
+  candidates.forEach(([mappingKey,labelText]) => {
+    const field = state.mappings[mappingKey];
+    if (!field) return;
+
+    const values = uniqueNonBlank(state.rows.map(r => r[field]));
+    if (!values.length) return;
+
+    const card = document.createElement("div");
+    card.className = "filter-card";
+
+    const label = document.createElement("label");
+    label.textContent = labelText;
+
+    const select = document.createElement("select");
+    select.innerHTML = `<option value="">All ${esc(labelText.toLowerCase())}</option>`;
+    values.forEach(v => {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = v;
+      select.appendChild(o);
+    });
+    select.addEventListener("change", render);
+
+    card.append(label, select);
+    container.appendChild(card);
+    state.coreFilters.set(mappingKey, { field, select });
+  });
+
+  if (!state.coreFilters.size) {
+    container.innerHTML = `<div class="small">No optional core fields were mapped.</div>`;
+  }
+}
+
+function corePasses(row) {
+  if (!state.coreFilters) return true;
+  for (const {field,select} of state.coreFilters.values()) {
+    if (!select.value) continue;
+    const raw = String(row[field] ?? "").trim();
+    // Exact matching prevents a state such as "Kansas" from also matching
+    // rows that merely contain the word elsewhere.
+    if (raw !== select.value) return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Dynamic filter UI
 // ---------------------------------------------------------------------------
 function buildTraitFilters() {
@@ -680,19 +891,25 @@ function buildTraitFilters() {
       if (!vals.length) return;
 
       const min = Math.min(...vals), max = Math.max(...vals);
+      const exactInput = document.createElement("input");
+      exactInput.type = "number";
+      exactInput.step = "any";
+      exactInput.placeholder = "Find exact numeric value (optional)";
+      exactInput.style.marginBottom = "6px";
+
       const range = document.createElement("div");
       range.className = "range-row";
 
       const minInput = document.createElement("input");
       minInput.type = "number";
       minInput.step = "any";
-      minInput.placeholder = `Min ${min}`;
+      minInput.placeholder = `Minimum (${min})`;
       minInput.value = min;
 
       const maxInput = document.createElement("input");
       maxInput.type = "number";
       maxInput.step = "any";
-      maxInput.placeholder = `Max ${max}`;
+      maxInput.placeholder = `Maximum (${max})`;
       maxInput.value = max;
 
       const includeMissing = document.createElement("label");
@@ -702,14 +919,14 @@ function buildTraitFilters() {
       missingCheck.checked = true;
       includeMissing.append(missingCheck, document.createTextNode("Include missing values"));
 
-      const filter = { type:"numeric", field:def.field, minInput, maxInput, missingCheck, domain:[min,max] };
+      const filter = { type:"numeric", field:def.field, exactInput, minInput, maxInput, missingCheck, domain:[min,max] };
       state.traitFilters.set(def.field, filter);
 
-      [minInput,maxInput].forEach(el => el.addEventListener("input", render));
+      [exactInput,minInput,maxInput].forEach(el => el.addEventListener("input", render));
       missingCheck.addEventListener("change", render);
 
       range.append(minInput,maxInput);
-      card.append(range, includeMissing);
+      card.append(exactInput, range, includeMissing);
     }
 
     if (def.type === "categorical") {
@@ -804,8 +1021,10 @@ function traitPasses(row) {
         if (!filter.missingCheck.checked) return false;
         continue;
       }
+      const exact = filter.exactInput.value === "" ? null : Number(filter.exactInput.value);
       const min = filter.minInput.value === "" ? -Infinity : Number(filter.minInput.value);
       const max = filter.maxInput.value === "" ? Infinity : Number(filter.maxInput.value);
+      if (exact !== null && Number.isFinite(exact) && n !== exact) return false;
       if (Number.isFinite(min) && n < min) return false;
       if (Number.isFinite(max) && n > max) return false;
     }
@@ -828,6 +1047,8 @@ function traitPasses(row) {
 
 function recordPasses(rec) {
   const row = state.rows[rec.rowIndex];
+
+  if (!corePasses(row)) return false;
 
   const q = $("globalSearch").value.trim().toLowerCase();
   if (q) {
@@ -909,7 +1130,7 @@ function recordPopup(rec) {
     .filter(([,v]) => String(v ?? "").trim() !== "");
 
   const makeGrid = pairs => `<div class="popup-grid">${
-    pairs.map(([k,v]) => `<div class="popup-key">${esc(k)}</div><div>${esc(v)}</div>`).join("")
+    pairs.map(([k,v]) => `<div class="popup-key">${esc(k)}</div><div class="popup-value">${esc(v)}</div>`).join("")
   }</div>`;
 
   return `
@@ -1042,6 +1263,7 @@ function beginExploration() {
     return;
   }
 
+  buildCoreFilters();
   buildTraitFilters();
   setupYearFilter();
 
@@ -1085,8 +1307,13 @@ function resetFiltersOnly() {
     $("includeUnknownYear").checked = true;
   }
 
+  if (state.coreFilters) {
+    for (const filter of state.coreFilters.values()) filter.select.value = "";
+  }
+
   for (const filter of state.traitFilters.values()) {
     if (filter.type === "numeric") {
+      filter.exactInput.value = "";
       filter.minInput.value = filter.domain[0];
       filter.maxInput.value = filter.domain[1];
       filter.missingCheck.checked = true;
@@ -1101,6 +1328,80 @@ function resetFiltersOnly() {
 }
 
 // ---------------------------------------------------------------------------
+// OpenWeather Weather Maps 2.0 historical overlays
+// ---------------------------------------------------------------------------
+// Historical tiles require an OpenWeather subscription that includes Weather
+// Maps 2.0. The API key is entered by the researcher and is never persisted.
+//
+// Temperature layer: TA2 = air temperature at 2 m.
+// Precipitation layer: PA0 = accumulated precipitation.
+//
+let weatherTemperatureLayer = null;
+let weatherPrecipLayer = null;
+
+function removeWeatherLayers() {
+  if (weatherTemperatureLayer) {
+    map.removeLayer(weatherTemperatureLayer);
+    layerControl.removeLayer(weatherTemperatureLayer);
+    weatherTemperatureLayer = null;
+  }
+  if (weatherPrecipLayer) {
+    map.removeLayer(weatherPrecipLayer);
+    layerControl.removeLayer(weatherPrecipLayer);
+    weatherPrecipLayer = null;
+  }
+}
+
+function prepareWeatherOverlays() {
+  const key = $("weatherApiKey").value.trim();
+  const dateValue = $("weatherDate").value;
+
+  if (!key) {
+    alert("Enter your OpenWeather API key first.");
+    return;
+  }
+  if (!dateValue) {
+    alert("Choose a historical date and time first.");
+    return;
+  }
+
+  const dt = new Date(dateValue);
+  if (Number.isNaN(dt.getTime())) {
+    alert("The selected weather date could not be interpreted.");
+    return;
+  }
+
+  const earliest = new Date("2019-03-18T00:00:00Z");
+  if (dt < earliest) {
+    alert("OpenWeather Weather Maps 2.0 historical maps begin on 18 March 2019.");
+    return;
+  }
+
+  const unix = Math.floor(dt.getTime()/1000);
+  removeWeatherLayers();
+
+  const common = `date=${unix}&opacity=0.58&fill_bound=true&appid=${encodeURIComponent(key)}`;
+
+  weatherTemperatureLayer = L.tileLayer(
+    `https://maps.openweathermap.org/maps/2.0/weather/TA2/{z}/{x}/{y}?${common}`,
+    { maxZoom: 19, attribution: "&copy; OpenWeather" }
+  );
+
+  weatherPrecipLayer = L.tileLayer(
+    `https://maps.openweathermap.org/maps/2.0/weather/PA0/{z}/{x}/{y}?${common}`,
+    { maxZoom: 19, attribution: "&copy; OpenWeather" }
+  );
+
+  layerControl.addOverlay(weatherTemperatureLayer, "Weather: Temperature (historical)");
+  layerControl.addOverlay(weatherPrecipLayer, "Weather: Precipitation (historical)");
+
+  $("weatherNote").textContent =
+    `Historical overlays prepared for ${dt.toLocaleString()}. Open the map layer control and toggle Temperature or Precipitation.`;
+
+  showStatus("Historical OpenWeather overlays are ready in the layer control.");
+}
+
+// ---------------------------------------------------------------------------
 // Event listeners
 // ---------------------------------------------------------------------------
 $("csvFile").addEventListener("change", async e => {
@@ -1110,6 +1411,7 @@ $("csvFile").addEventListener("change", async e => {
 });
 
 $("loadExample").addEventListener("click", loadExample);
+$("applyWeather").addEventListener("click", prepareWeatherOverlays);
 
 $("selectSuggested").addEventListener("click", () => {
   document.querySelectorAll(".trait-row").forEach(row => {
@@ -1163,6 +1465,13 @@ map.addControl(new ResetControl());
 
 // Initial state.
 setStage("upload");
+(() => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  d.setHours(12,0,0,0);
+  const local = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  $("weatherDate").value = local;
+})();
 </script>
 </body>
 </html>
