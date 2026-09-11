@@ -92,7 +92,7 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.1</div>
   <div class="subtitle">
     Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
@@ -124,7 +124,8 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
     <div class="section">3. Choose trait fields</div>
     <div class="small">
       Trait MMAP infers a useful filter type for each column. Check the fields you want available as interactive traits.
-      Numeric fields receive range filters; categorical fields receive value filters; text fields receive contains-search filters.
+      <strong>Numeric fields become searchable numeric filters</strong> (exact value, minimum, and maximum) and may also be used for point-size visualization.
+      Categorical fields receive value filters; text fields receive contains-search filters.
     </div>
     <div class="two" style="margin:7px 0">
       <button id="selectSuggested" class="secondary">Select suggested traits</button>
@@ -179,22 +180,6 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
     <div class="small" style="margin-top:5px">
       “Color by” is intended for categorical traits; “Size by” is intended for numeric traits.
     </div>
-
-    <div class="section">Historical weather overlays</div>
-    <div class="small">
-      Optional OpenWeather Weather Maps 2.0 overlays. Enter your own API key and choose a date/time.
-      The key is kept only in this browser session and is not saved by Trait MMAP.
-    </div>
-    <label for="weatherApiKey">OpenWeather API key</label>
-    <input id="weatherApiKey" type="text" placeholder="Enter API key">
-    <label for="weatherDate">Historical date and time</label>
-    <input id="weatherDate" type="datetime-local">
-    <button id="applyWeather" class="secondary">Prepare weather overlays</button>
-    <div id="weatherNote" class="small" style="margin-top:5px">
-      Weather Maps 2.0 historical tiles are available from 18 March 2019 for subscribed plans.
-      After preparing them, toggle Temperature or Precipitation from the Leaflet layer control.
-    </div>
-
     <div class="section">Spatial selection</div>
     <div class="small">
       Left-click a point to inspect it. Right-click a point to add/remove it from the selection.
@@ -335,7 +320,20 @@ function normalizeHeader(s) {
 
 function parseFinite(v) {
   if (v === null || v === undefined || String(v).trim() === "") return null;
-  const n = Number(String(v).trim().replace(/,/g, ""));
+
+  // First try a strict numeric conversion.
+  const cleaned = String(v).trim().replace(/,/g, "");
+  const direct = Number(cleaned);
+  if (Number.isFinite(direct)) return direct;
+
+  // Research datasets often contain otherwise numeric values with units,
+  // e.g. "23.4 g" or "151 mm".  If a single numeric token is present,
+  // use that token for filtering/visualization while preserving the
+  // original unmodified value in downloads.
+  const match = cleaned.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/);
+  if (!match) return null;
+
+  const n = Number(match[0]);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -722,6 +720,12 @@ function buildTraitChoiceList() {
       select.appendChild(o);
     });
 
+    // Changing the field type is interpreted as an explicit choice to use
+    // the field as a trait, so automatically check it.
+    select.addEventListener("change", () => {
+      check.checked = true;
+    });
+
     row.append(check, name, select);
     container.appendChild(row);
   });
@@ -888,45 +892,80 @@ function buildTraitFilters() {
         .map(r => parseFinite(r[def.field]))
         .filter(v => v !== null);
 
-      if (!vals.length) return;
+      if (!vals.length) {
+        // Never silently omit a numeric field from the filter panel.
+        // If values cannot be parsed numerically, provide a raw-value
+        // contains search so the field remains searchable.
+        const warning = document.createElement("div");
+        warning.className = "small warn";
+        warning.style.padding = "6px";
+        warning.style.marginBottom = "6px";
+        warning.textContent =
+          "No numeric values could be parsed from this column. Raw-value search is shown instead; consider changing the field type to Text.";
 
-      const min = Math.min(...vals), max = Math.max(...vals);
-      const exactInput = document.createElement("input");
-      exactInput.type = "number";
-      exactInput.step = "any";
-      exactInput.placeholder = "Find exact numeric value (optional)";
-      exactInput.style.marginBottom = "6px";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "Search raw values…";
 
-      const range = document.createElement("div");
-      range.className = "range-row";
+        const filter = { type:"numeric-fallback-text", field:def.field, input };
+        state.traitFilters.set(def.field, filter);
 
-      const minInput = document.createElement("input");
-      minInput.type = "number";
-      minInput.step = "any";
-      minInput.placeholder = `Minimum (${min})`;
-      minInput.value = min;
+        input.addEventListener("input", render);
+        card.append(warning, input);
+      } else {
+        const min = Math.min(...vals), max = Math.max(...vals);
 
-      const maxInput = document.createElement("input");
-      maxInput.type = "number";
-      maxInput.step = "any";
-      maxInput.placeholder = `Maximum (${max})`;
-      maxInput.value = max;
+        const domain = document.createElement("div");
+        domain.className = "small";
+        domain.style.marginBottom = "6px";
+        domain.textContent = `Observed numeric range: ${min} to ${max}`;
 
-      const includeMissing = document.createElement("label");
-      includeMissing.className = "check-inline";
-      const missingCheck = document.createElement("input");
-      missingCheck.type = "checkbox";
-      missingCheck.checked = true;
-      includeMissing.append(missingCheck, document.createTextNode("Include missing values"));
+        const exactInput = document.createElement("input");
+        exactInput.type = "number";
+        exactInput.step = "any";
+        exactInput.placeholder = "Exact value (optional)";
+        exactInput.style.marginBottom = "6px";
 
-      const filter = { type:"numeric", field:def.field, exactInput, minInput, maxInput, missingCheck, domain:[min,max] };
-      state.traitFilters.set(def.field, filter);
+        const range = document.createElement("div");
+        range.className = "range-row";
 
-      [exactInput,minInput,maxInput].forEach(el => el.addEventListener("input", render));
-      missingCheck.addEventListener("change", render);
+        const minInput = document.createElement("input");
+        minInput.type = "number";
+        minInput.step = "any";
+        minInput.placeholder = `Minimum (≥ ${min})`;
 
-      range.append(minInput,maxInput);
-      card.append(exactInput, range, includeMissing);
+        const maxInput = document.createElement("input");
+        maxInput.type = "number";
+        maxInput.step = "any";
+        maxInput.placeholder = `Maximum (≤ ${max})`;
+
+        const includeMissing = document.createElement("label");
+        includeMissing.className = "check-inline";
+        const missingCheck = document.createElement("input");
+        missingCheck.type = "checkbox";
+        missingCheck.checked = false;
+        includeMissing.append(
+          missingCheck,
+          document.createTextNode("Include records with missing numeric values when this filter is active")
+        );
+
+        const filter = {
+          type:"numeric",
+          field:def.field,
+          exactInput,
+          minInput,
+          maxInput,
+          missingCheck,
+          domain:[min,max]
+        };
+        state.traitFilters.set(def.field, filter);
+
+        [exactInput,minInput,maxInput].forEach(el => el.addEventListener("input", render));
+        missingCheck.addEventListener("change", render);
+
+        range.append(minInput,maxInput);
+        card.append(domain, exactInput, range, includeMissing);
+      }
     }
 
     if (def.type === "categorical") {
@@ -1016,17 +1055,36 @@ function traitPasses(row) {
     const raw = String(row[filter.field] ?? "").trim();
 
     if (filter.type === "numeric") {
+      const exactText = filter.exactInput.value.trim();
+      const minText = filter.minInput.value.trim();
+      const maxText = filter.maxInput.value.trim();
+
+      // A selected numeric trait should not alter the map until the user
+      // actually enters a numeric criterion.
+      const active = exactText !== "" || minText !== "" || maxText !== "";
+      if (!active) continue;
+
       const n = parseFinite(raw);
+
+      // Once a numeric filter is active, missing/unparseable values are
+      // excluded unless the researcher explicitly asks to keep them.
       if (n === null) {
         if (!filter.missingCheck.checked) return false;
         continue;
       }
-      const exact = filter.exactInput.value === "" ? null : Number(filter.exactInput.value);
-      const min = filter.minInput.value === "" ? -Infinity : Number(filter.minInput.value);
-      const max = filter.maxInput.value === "" ? Infinity : Number(filter.maxInput.value);
+
+      const exact = exactText === "" ? null : Number(exactText);
+      const min = minText === "" ? null : Number(minText);
+      const max = maxText === "" ? null : Number(maxText);
+
       if (exact !== null && Number.isFinite(exact) && n !== exact) return false;
-      if (Number.isFinite(min) && n < min) return false;
-      if (Number.isFinite(max) && n > max) return false;
+      if (min !== null && Number.isFinite(min) && n < min) return false;
+      if (max !== null && Number.isFinite(max) && n > max) return false;
+    }
+
+    if (filter.type === "numeric-fallback-text") {
+      const q = filter.input.value.trim().toLowerCase();
+      if (q && !raw.toLowerCase().includes(q)) return false;
     }
 
     if (filter.type === "categorical") {
@@ -1314,9 +1372,12 @@ function resetFiltersOnly() {
   for (const filter of state.traitFilters.values()) {
     if (filter.type === "numeric") {
       filter.exactInput.value = "";
-      filter.minInput.value = filter.domain[0];
-      filter.maxInput.value = filter.domain[1];
-      filter.missingCheck.checked = true;
+      filter.minInput.value = "";
+      filter.maxInput.value = "";
+      filter.missingCheck.checked = false;
+    }
+    if (filter.type === "numeric-fallback-text") {
+      filter.input.value = "";
     }
     if (filter.type === "categorical") {
       filter.select.value = "";
@@ -1325,80 +1386,6 @@ function resetFiltersOnly() {
     if (filter.type === "text") filter.input.value = "";
   }
   render();
-}
-
-// ---------------------------------------------------------------------------
-// OpenWeather Weather Maps 2.0 historical overlays
-// ---------------------------------------------------------------------------
-// Historical tiles require an OpenWeather subscription that includes Weather
-// Maps 2.0. The API key is entered by the researcher and is never persisted.
-//
-// Temperature layer: TA2 = air temperature at 2 m.
-// Precipitation layer: PA0 = accumulated precipitation.
-//
-let weatherTemperatureLayer = null;
-let weatherPrecipLayer = null;
-
-function removeWeatherLayers() {
-  if (weatherTemperatureLayer) {
-    map.removeLayer(weatherTemperatureLayer);
-    layerControl.removeLayer(weatherTemperatureLayer);
-    weatherTemperatureLayer = null;
-  }
-  if (weatherPrecipLayer) {
-    map.removeLayer(weatherPrecipLayer);
-    layerControl.removeLayer(weatherPrecipLayer);
-    weatherPrecipLayer = null;
-  }
-}
-
-function prepareWeatherOverlays() {
-  const key = $("weatherApiKey").value.trim();
-  const dateValue = $("weatherDate").value;
-
-  if (!key) {
-    alert("Enter your OpenWeather API key first.");
-    return;
-  }
-  if (!dateValue) {
-    alert("Choose a historical date and time first.");
-    return;
-  }
-
-  const dt = new Date(dateValue);
-  if (Number.isNaN(dt.getTime())) {
-    alert("The selected weather date could not be interpreted.");
-    return;
-  }
-
-  const earliest = new Date("2019-03-18T00:00:00Z");
-  if (dt < earliest) {
-    alert("OpenWeather Weather Maps 2.0 historical maps begin on 18 March 2019.");
-    return;
-  }
-
-  const unix = Math.floor(dt.getTime()/1000);
-  removeWeatherLayers();
-
-  const common = `date=${unix}&opacity=0.58&fill_bound=true&appid=${encodeURIComponent(key)}`;
-
-  weatherTemperatureLayer = L.tileLayer(
-    `https://maps.openweathermap.org/maps/2.0/weather/TA2/{z}/{x}/{y}?${common}`,
-    { maxZoom: 19, attribution: "&copy; OpenWeather" }
-  );
-
-  weatherPrecipLayer = L.tileLayer(
-    `https://maps.openweathermap.org/maps/2.0/weather/PA0/{z}/{x}/{y}?${common}`,
-    { maxZoom: 19, attribution: "&copy; OpenWeather" }
-  );
-
-  layerControl.addOverlay(weatherTemperatureLayer, "Weather: Temperature (historical)");
-  layerControl.addOverlay(weatherPrecipLayer, "Weather: Precipitation (historical)");
-
-  $("weatherNote").textContent =
-    `Historical overlays prepared for ${dt.toLocaleString()}. Open the map layer control and toggle Temperature or Precipitation.`;
-
-  showStatus("Historical OpenWeather overlays are ready in the layer control.");
 }
 
 // ---------------------------------------------------------------------------
@@ -1411,7 +1398,6 @@ $("csvFile").addEventListener("change", async e => {
 });
 
 $("loadExample").addEventListener("click", loadExample);
-$("applyWeather").addEventListener("click", prepareWeatherOverlays);
 
 $("selectSuggested").addEventListener("click", () => {
   document.querySelectorAll(".trait-row").forEach(row => {
@@ -1465,13 +1451,6 @@ map.addControl(new ResetControl());
 
 // Initial state.
 setStage("upload");
-(() => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  d.setHours(12,0,0,0);
-  const local = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  $("weatherDate").value = local;
-})();
 </script>
 </body>
 </html>
