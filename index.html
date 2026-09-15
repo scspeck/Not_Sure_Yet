@@ -92,7 +92,7 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.1</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.2</div>
   <div class="subtitle">
     Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
@@ -213,6 +213,7 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/esri-leaflet@3.0.15/dist/esri-leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -275,6 +276,56 @@ const layerControl = L.control.layers(
   {},
   { collapsed: true }
 ).addTo(map);
+
+// ---------------------------------------------------------------------------
+// Global terrestrial ecoregions reference overlay
+// RESOLVE Ecoregions 2017, hosted by UNEP-WCMC.
+// Optional external reference layer; core Trait MMAP functions do not depend
+// on this service.
+// ---------------------------------------------------------------------------
+const ecoregions = L.esri.featureLayer({
+  url: "https://data-gis.unep-wcmc.org/server/rest/services/Bio-geographicalRegions/Resolve_Ecoregions/FeatureServer/0",
+  style: function(feature) {
+    return {
+      color: "#555",
+      weight: 0.8,
+      opacity: 0.75,
+      fillColor: "#7da67d",
+      fillOpacity: 0.16
+    };
+  }
+});
+
+// Keep the overlay OFF by default and expose it through Leaflet's layer menu.
+layerControl.addOverlay(ecoregions, "Global terrestrial ecoregions");
+
+// Popup for clicked ecoregions.
+ecoregions.bindPopup(function(layer) {
+  const p = (layer.feature && layer.feature.properties) ? layer.feature.properties : {};
+
+  const ecoName =
+    p.eco_name || p.ECO_NAME || p.ECO_NAME_U || p.NAME || "Terrestrial ecoregion";
+
+  const biome =
+    p.biome_name || p.BIOME_NAME || p.biome || p.BIOME || "";
+
+  const realm =
+    p.realm || p.REALM || "";
+
+  let popup = `<div style="min-width:190px"><strong>${esc(String(ecoName))}</strong>`;
+
+  if (biome) popup += `<br><b>Biome:</b> ${esc(String(biome))}`;
+  if (realm) popup += `<br><b>Realm:</b> ${esc(String(realm))}`;
+
+  popup += `<div style="margin-top:6px;font-size:0.72rem;color:#667;">RESOLVE Ecoregions 2017</div></div>`;
+  return popup;
+});
+
+// A failure of the external service should never break Trait MMAP.
+ecoregions.on("requesterror", function(error) {
+  console.warn("Trait MMAP: ecoregion reference layer request failed.", error);
+});
+
 
 const cluster = L.markerClusterGroup({
   chunkedLoading: true,
