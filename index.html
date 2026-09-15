@@ -87,12 +87,38 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
   aside{height:auto;border-right:0;border-bottom:1px solid var(--border)}
   #map{height:70vh}
 }
+
+    .ecoregion-legend{
+      background:rgba(255,255,255,.96);
+      border:1px solid #cfd6d9;
+      border-radius:7px;
+      box-shadow:0 1px 5px rgba(0,0,0,.22);
+      padding:8px 10px;
+      max-width:310px;
+      max-height:46vh;
+      overflow:auto;
+      font-size:.70rem;
+      line-height:1.25;
+    }
+    .eco-legend-title{font-weight:800;font-size:.78rem;margin-bottom:1px}
+    .eco-legend-note{color:#68757b;margin-bottom:6px}
+    .eco-legend-grid{display:grid;grid-template-columns:1fr;gap:3px}
+    .eco-legend-grid span{display:flex;align-items:flex-start;gap:5px}
+    .eco-legend-grid i{
+      display:inline-block;
+      width:12px;
+      height:12px;
+      min-width:12px;
+      margin-top:1px;
+      border:1px solid rgba(0,0,0,.25);
+    }
+
 </style>
 </head>
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.3</div>
   <div class="subtitle">
     Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
@@ -213,7 +239,6 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/esri-leaflet@3.0.15/dist/esri-leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -278,53 +303,202 @@ const layerControl = L.control.layers(
 ).addTo(map);
 
 // ---------------------------------------------------------------------------
-// Global terrestrial ecoregions reference overlay
-// RESOLVE Ecoregions 2017, hosted by UNEP-WCMC.
-// Optional external reference layer; core Trait MMAP functions do not depend
-// on this service.
+// Global terrestrial ecoregions reference overlay — optimized
+//
+// IMPORTANT:
+// Do NOT load all 846 global polygons as a live FeatureLayer. That can make
+// the browser fetch/render too much geometry and compete with large specimen
+// datasets. Instead, query only the ecoregions intersecting the CURRENT MAP
+// VIEW when the researcher turns the overlay on or pans/zooms.
+//
+// The layer is also simplified by the ArcGIS service using maxAllowableOffset.
 // ---------------------------------------------------------------------------
-const ecoregions = L.esri.featureLayer({
-  url: "https://data-gis.unep-wcmc.org/server/rest/services/Bio-geographicalRegions/Resolve_Ecoregions/FeatureServer/0",
-  style: function(feature) {
-    return {
-      color: "#555",
-      weight: 0.8,
-      opacity: 0.75,
-      fillColor: "#7da67d",
-      fillOpacity: 0.16
-    };
+
+const ECOREGION_SERVICE =
+  "https://data-gis.unep-wcmc.org/server/rest/services/Bio-geographicalRegions/Resolve_Ecoregions/FeatureServer/0";
+
+const ecoregionGroup = L.layerGroup();
+layerControl.addOverlay(ecoregionGroup, "Global terrestrial ecoregions");
+
+let ecoregionRequestController = null;
+let ecoregionRefreshTimer = null;
+let ecoregionLegend = null;
+
+// Biome palette. These colors are stable and are intended to distinguish
+// broad ecological regions while leaving uploaded specimen points visible.
+const biomeColors = {
+  1:  "#2f6b3b",
+  2:  "#5b8f3d",
+  3:  "#8ea83f",
+  4:  "#b7a83c",
+  5:  "#d7b85a",
+  6:  "#8c7a4b",
+  7:  "#c9a66b",
+  8:  "#7d9f8b",
+  9:  "#86a8c5",
+  10: "#5f8f68",
+  11: "#9b8a6a",
+  12: "#b97a57",
+  13: "#8795a1",
+  14: "#6d7c91"
+};
+
+function biomeColor(properties) {
+  const p = properties || {};
+  const n = Number(p.BIOME_NUM ?? p.biome_num ?? p.BIOME ?? p.biome);
+  if (Number.isFinite(n) && biomeColors[n]) return biomeColors[n];
+
+  // Stable fallback based on biome text if the service does not expose
+  // BIOME_NUM in a particular response.
+  const name = String(p.BIOME_NAME ?? p.biome_name ?? p.BIOME ?? p.biome ?? "unknown");
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i);
+  const palette = Object.values(biomeColors);
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function ecoregionPopup(feature) {
+  const p = feature.properties || {};
+  const ecoName = p.ECO_NAME ?? p.eco_name ?? p.NAME ?? "Terrestrial ecoregion";
+  const biome = p.BIOME_NAME ?? p.biome_name ?? "";
+  const realm = p.REALM ?? p.realm ?? "";
+
+  return `
+    <div style="min-width:190px">
+      <strong>${esc(String(ecoName))}</strong>
+      ${biome ? `<br><b>Biome:</b> ${esc(String(biome))}` : ""}
+      ${realm ? `<br><b>Realm:</b> ${esc(String(realm))}` : ""}
+      <div style="margin-top:6px;font-size:.72rem;color:#667;">
+        RESOLVE Ecoregions 2017
+      </div>
+    </div>`;
+}
+
+function currentEcoregionTolerance() {
+  // Geographic-coordinate simplification tolerance. At continental zooms
+  // the service returns simpler polygons; closer views retain more detail.
+  const z = map.getZoom();
+  if (z <= 3) return 0.12;
+  if (z <= 5) return 0.05;
+  if (z <= 7) return 0.015;
+  return 0.004;
+}
+
+async function refreshEcoregions() {
+  if (!map.hasLayer(ecoregionGroup)) return;
+
+  if (ecoregionRequestController) ecoregionRequestController.abort();
+  ecoregionRequestController = new AbortController();
+
+  const b = map.getBounds();
+  const envelope = [
+    b.getWest(),
+    b.getSouth(),
+    b.getEast(),
+    b.getNorth()
+  ].join(",");
+
+  const params = new URLSearchParams({
+    f: "geojson",
+    where: "1=1",
+    geometry: envelope,
+    geometryType: "esriGeometryEnvelope",
+    inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: "OBJECTID,ECO_NAME,BIOME_NUM,BIOME_NAME,REALM",
+    returnGeometry: "true",
+    outSR: "4326",
+    maxAllowableOffset: String(currentEcoregionTolerance())
+  });
+
+  try {
+    const response = await fetch(
+      `${ECOREGION_SERVICE}/query?${params.toString()}`,
+      { signal: ecoregionRequestController.signal }
+    );
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+
+    if (data.error) throw new Error(data.error.message || "Ecoregion service error");
+
+    ecoregionGroup.clearLayers();
+
+    const geo = L.geoJSON(data, {
+      renderer: L.canvas({ padding: 0.2 }),
+      style: feature => ({
+        color: "#50575b",
+        weight: 0.65,
+        opacity: 0.75,
+        fillColor: biomeColor(feature.properties),
+        fillOpacity: 0.30
+      }),
+      onEachFeature: (feature, layer) => {
+        layer.bindPopup(() => ecoregionPopup(feature));
+      }
+    });
+
+    geo.eachLayer(layer => ecoregionGroup.addLayer(layer));
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      console.warn("Trait MMAP: ecoregion overlay request failed.", error);
+    }
+  }
+}
+
+function scheduleEcoregionRefresh() {
+  if (!map.hasLayer(ecoregionGroup)) return;
+  clearTimeout(ecoregionRefreshTimer);
+  ecoregionRefreshTimer = setTimeout(refreshEcoregions, 250);
+}
+
+// Only query the service when the user actually turns the overlay on.
+map.on("overlayadd", e => {
+  if (e.layer === ecoregionGroup) {
+    refreshEcoregions();
+    if (ecoregionLegend) ecoregionLegend.addTo(map);
   }
 });
 
-// Keep the overlay OFF by default and expose it through Leaflet's layer menu.
-layerControl.addOverlay(ecoregions, "Global terrestrial ecoregions");
-
-// Popup for clicked ecoregions.
-ecoregions.bindPopup(function(layer) {
-  const p = (layer.feature && layer.feature.properties) ? layer.feature.properties : {};
-
-  const ecoName =
-    p.eco_name || p.ECO_NAME || p.ECO_NAME_U || p.NAME || "Terrestrial ecoregion";
-
-  const biome =
-    p.biome_name || p.BIOME_NAME || p.biome || p.BIOME || "";
-
-  const realm =
-    p.realm || p.REALM || "";
-
-  let popup = `<div style="min-width:190px"><strong>${esc(String(ecoName))}</strong>`;
-
-  if (biome) popup += `<br><b>Biome:</b> ${esc(String(biome))}`;
-  if (realm) popup += `<br><b>Realm:</b> ${esc(String(realm))}`;
-
-  popup += `<div style="margin-top:6px;font-size:0.72rem;color:#667;">RESOLVE Ecoregions 2017</div></div>`;
-  return popup;
+map.on("overlayremove", e => {
+  if (e.layer === ecoregionGroup) {
+    if (ecoregionRequestController) ecoregionRequestController.abort();
+    ecoregionGroup.clearLayers();
+    if (ecoregionLegend) map.removeControl(ecoregionLegend);
+  }
 });
 
-// A failure of the external service should never break Trait MMAP.
-ecoregions.on("requesterror", function(error) {
-  console.warn("Trait MMAP: ecoregion reference layer request failed.", error);
-});
+map.on("moveend zoomend", scheduleEcoregionRefresh);
+
+// Compact biome legend. It appears only while the ecoregion overlay is on.
+ecoregionLegend = L.control({ position: "bottomright" });
+
+ecoregionLegend.onAdd = function() {
+  const div = L.DomUtil.create("div", "ecoregion-legend");
+  div.innerHTML = `
+    <div class="eco-legend-title">Terrestrial biomes</div>
+    <div class="eco-legend-note">RESOLVE Ecoregions 2017</div>
+    <div class="eco-legend-grid">
+      <span><i style="background:${biomeColors[1]}"></i>Tropical moist broadleaf forests</span>
+      <span><i style="background:${biomeColors[2]}"></i>Tropical dry broadleaf forests</span>
+      <span><i style="background:${biomeColors[3]}"></i>Tropical coniferous forests</span>
+      <span><i style="background:${biomeColors[4]}"></i>Temperate broadleaf & mixed forests</span>
+      <span><i style="background:${biomeColors[5]}"></i>Temperate conifer forests</span>
+      <span><i style="background:${biomeColors[6]}"></i>Boreal forests / taiga</span>
+      <span><i style="background:${biomeColors[7]}"></i>Tropical grasslands & savannas</span>
+      <span><i style="background:${biomeColors[8]}"></i>Temperate grasslands & savannas</span>
+      <span><i style="background:${biomeColors[9]}"></i>Flooded grasslands & savannas</span>
+      <span><i style="background:${biomeColors[10]}"></i>Montane grasslands & shrublands</span>
+      <span><i style="background:${biomeColors[11]}"></i>Tundra</span>
+      <span><i style="background:${biomeColors[12]}"></i>Mediterranean forests & scrub</span>
+      <span><i style="background:${biomeColors[13]}"></i>Deserts & xeric shrublands</span>
+      <span><i style="background:${biomeColors[14]}"></i>Mangroves</span>
+    </div>`;
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.disableScrollPropagation(div);
+  return div;
+};
+
 
 
 const cluster = L.markerClusterGroup({
