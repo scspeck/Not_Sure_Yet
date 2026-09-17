@@ -4,12 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="Trait MMAP — Mapper for Mammals and Parasites. Upload, filter, map, spatially select, and export georeferenced mammal trait data in your browser.">
-<title>Trait MMAP - Mapper for Mammals and Parasites</title>
+<title>Trait MMAP — Mapper for Mammals and Parasites</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.fullscreen@3.0.2/Control.FullScreen.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
 
 <style>
 :root{
@@ -113,14 +115,17 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
       border:1px solid rgba(0,0,0,.25);
     }
 
+
+    .filter-summary{background:#f5f7f8;border:1px solid #dde3e6;border-radius:6px;padding:7px;line-height:1.45;overflow-wrap:anywhere}
+    .traitmmap-coordinates{background:rgba(255,255,255,.92);padding:3px 6px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:.70rem}
 </style>
 </head>
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · v1.0.0</div>
   <div class="subtitle">
-    Upload a georeferenced dataset, choose the biological traits you want to explore,
+    Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
     Files are processed locally in your browser.
   </div>
@@ -206,22 +211,37 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
     <div class="small" style="margin-top:5px">
       “Color by” is intended for categorical traits; “Size by” is intended for numeric traits.
     </div>
+    <div class="section">Map display</div>
+    <label class="check-inline"><input id="clusterToggle" type="checkbox" checked> Cluster records</label>
+    <label class="check-inline"><input id="heatToggle" type="checkbox"> Record density heatmap</label>
+    <button id="zoomFiltered" class="secondary">Zoom to filtered records</button>
+    <div class="small">Record density reflects mapped records, not organism abundance.</div>
+
+    <div class="section">Active filters</div>
+    <div id="activeFilterSummary" class="small filter-summary">No active filters.</div>
+
     <div class="section">Spatial selection</div>
     <div class="small">
       Left-click a point to inspect it. Right-click a point to add/remove it from the selection.
-      Use the polygon tool on the map to select all currently visible records inside an area.
+      Use the rectangle or polygon tools on the map to select all currently visible records inside an area.
     </div>
     <div class="two">
       <button id="clearSelection" class="secondary">Clear selection</button>
-      <button id="clearPolygon" class="secondary">Clear polygon</button>
+      <button id="clearPolygon" class="secondary">Clear drawn area</button>
     </div>
 
     <div class="section">Export</div>
     <div class="small">
       Exports preserve every original column from the uploaded CSV. Trait MMAP adds only a few helper columns describing selection and parsed coordinates/year.
     </div>
-    <button id="downloadFiltered" class="primary">Download filtered records</button>
-    <button id="downloadSelected" class="secondary">Download selected records</button>
+    <div class="two">
+      <button id="downloadFiltered" class="primary">Filtered CSV</button>
+      <button id="downloadFilteredGeoJSON" class="secondary">Filtered GeoJSON</button>
+    </div>
+    <div class="two">
+      <button id="downloadSelected" class="secondary">Selected CSV</button>
+      <button id="downloadSelectedGeoJSON" class="secondary">Selected GeoJSON</button>
+    </div>
 
     <div class="section">Dataset controls</div>
     <button id="remapDataset" class="secondary">Change field mappings / traits</button>
@@ -240,6 +260,9 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://unpkg.com/leaflet.fullscreen@3.0.2/Control.FullScreen.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
@@ -280,6 +303,39 @@ const state = {
 // Map
 // ---------------------------------------------------------------------------
 const map = L.map("map", { preferCanvas: true }).setView([39, -98], 4);
+
+L.control.scale({ metric:true, imperial:true, maxWidth:140 }).addTo(map);
+
+if (L.Control.Fullscreen) {
+  map.addControl(new L.Control.Fullscreen({
+    position:"topleft",
+    title:"Full screen",
+    titleCancel:"Exit full screen"
+  }));
+}
+
+if (L.Control.geocoder) {
+  L.Control.geocoder({
+    position:"topleft",
+    defaultMarkGeocode:false,
+    placeholder:"Find a place…"
+  })
+  .on("markgeocode", e => map.fitBounds(e.geocode.bbox))
+  .addTo(map);
+}
+
+const coordinateControl = L.control({position:"bottomleft"});
+coordinateControl.onAdd = function() {
+  this._div = L.DomUtil.create("div","traitmmap-coordinates");
+  this._div.textContent = "Cursor coordinates";
+  return this._div;
+};
+coordinateControl.addTo(map);
+map.on("mousemove", e => {
+  coordinateControl._div.textContent =
+    `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+});
+
 
 const street = L.tileLayer(
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -517,19 +573,23 @@ ecoregionLegend.onAdd = function() {
 
 
 const cluster = L.markerClusterGroup({
-  chunkedLoading: true,
-  chunkInterval: 100,
-  chunkDelay: 25,
-  showCoverageOnHover: false,
-  maxClusterRadius: 45
+  chunkedLoading:true,
+  chunkInterval:120,
+  chunkDelay:30,
+  removeOutsideVisibleBounds:true,
+  spiderfyOnMaxZoom:true,
+  showCoverageOnHover:false
 }).addTo(map);
+
+const plainPoints = L.layerGroup();
+const heatLayer = L.heatLayer([], { radius:18, blur:14, minOpacity:0.28 });
 
 const drawnItems = new L.FeatureGroup().addTo(map);
 const drawControl = new L.Control.Draw({
   position: "topleft",
   draw: {
     polyline: false,
-    rectangle: false,
+    rectangle: { shapeOptions:{ color:"#2f6f56", weight:2, fillOpacity:.10 } },
     circle: false,
     circlemarker: false,
     marker: false,
@@ -1467,35 +1527,118 @@ function toggleSelection(rowIndex) {
   render();
 }
 
+
+function activeFilterDescriptions() {
+  const parts = [];
+
+  if (state.coreFilters) {
+    for (const [key, filter] of state.coreFilters.entries()) {
+      if (filter.select.value) parts.push(`${key}: ${filter.select.value}`);
+    }
+  }
+
+  const q = $("globalSearch").value.trim();
+  if (q) parts.push(`search: "${q}"`);
+
+  if (state.mappings.date && state.yearExtent) {
+    const min = $("yearMin").value, max = $("yearMax").value;
+    if (min && Number(min) !== state.yearExtent[0]) parts.push(`year ≥ ${min}`);
+    if (max && Number(max) !== state.yearExtent[1]) parts.push(`year ≤ ${max}`);
+    if (!$("includeUnknownYear").checked) parts.push("known year only");
+  }
+
+  for (const filter of state.traitFilters.values()) {
+    if (filter.type === "categorical" && filter.select.value)
+      parts.push(`${filter.field}: ${filter.select.value}`);
+    if (filter.type === "text" && filter.input.value.trim())
+      parts.push(`${filter.field} contains "${filter.input.value.trim()}"`);
+    if (filter.type === "numeric-fallback-text" && filter.input.value.trim())
+      parts.push(`${filter.field} contains "${filter.input.value.trim()}"`);
+    if (filter.type === "numeric") {
+      if (filter.exactInput.value.trim()) parts.push(`${filter.field} = ${filter.exactInput.value.trim()}`);
+      if (filter.minInput.value.trim()) parts.push(`${filter.field} ≥ ${filter.minInput.value.trim()}`);
+      if (filter.maxInput.value.trim()) parts.push(`${filter.field} ≤ ${filter.maxInput.value.trim()}`);
+    }
+  }
+  return parts;
+}
+
+function updateFilterSummary() {
+  const parts = activeFilterDescriptions();
+  $("activeFilterSummary").innerHTML =
+    `<b>${state.visible.size.toLocaleString()}</b> of <b>${state.records.length.toLocaleString()}</b> mappable records shown.` +
+    (parts.length ? `<br>${parts.map(esc).join(" · ")}` : "<br>No active filters.");
+}
+
+function setPointDisplayMode() {
+  const clustered = $("clusterToggle").checked;
+  if (map.hasLayer(cluster)) map.removeLayer(cluster);
+  if (map.hasLayer(plainPoints)) map.removeLayer(plainPoints);
+
+  if (clustered) cluster.addTo(map);
+  else plainPoints.addTo(map);
+}
+
+function zoomToFiltered() {
+  const pts = state.records
+    .filter(r => state.visible.has(r.rowIndex))
+    .map(r => [r.lat,r.lon]);
+  if (!pts.length) return alert("No filtered records are currently visible.");
+  map.fitBounds(L.latLngBounds(pts).pad(.06));
+}
+
 function render() {
   if (!state.records.length) return;
 
   cluster.clearLayers();
+  plainPoints.clearLayers();
   state.visible.clear();
   state.markers.clear();
 
-  const layers = [];
+  const clusterLayers = [];
+  const plainLayers = [];
+  const heatPoints = [];
 
   for (const rec of state.records) {
     if (!recordPasses(rec)) continue;
 
     state.visible.add(rec.rowIndex);
-    const marker = L.circleMarker([rec.lat, rec.lon], markerStyle(rec));
-    marker.bindPopup(recordPopup(rec));
 
-    marker.on("contextmenu", e => {
-      L.DomEvent.stopPropagation(e);
-      if (e.originalEvent) L.DomEvent.preventDefault(e.originalEvent);
-      toggleSelection(rec.rowIndex);
-    });
+    // Separate marker instances are required because a Leaflet layer cannot
+    // belong to both the clustered and plain layer groups simultaneously.
+    const makeMarker = () => {
+      const marker = L.circleMarker([rec.lat, rec.lon], markerStyle(rec));
+      marker.bindPopup(recordPopup(rec));
+      marker.on("contextmenu", e => {
+        L.DomEvent.stopPropagation(e);
+        if (e.originalEvent) L.DomEvent.preventDefault(e.originalEvent);
+        toggleSelection(rec.rowIndex);
+      });
+      return marker;
+    };
 
-    state.markers.set(rec.rowIndex, marker);
-    layers.push(marker);
+    const clusteredMarker = makeMarker();
+    const plainMarker = makeMarker();
+    state.markers.set(rec.rowIndex, $("clusterToggle").checked ? clusteredMarker : plainMarker);
+    clusterLayers.push(clusteredMarker);
+    plainLayers.push(plainMarker);
+    heatPoints.push([rec.lat, rec.lon, 1]);
   }
 
-  cluster.addLayers(layers);
+  cluster.addLayers(clusterLayers);
+  plainPoints.addLayer(L.layerGroup(plainLayers));
+  setPointDisplayMode();
+
+  heatLayer.setLatLngs(heatPoints);
+  if ($("heatToggle").checked) {
+    if (!map.hasLayer(heatLayer)) heatLayer.addTo(map);
+  } else if (map.hasLayer(heatLayer)) {
+    map.removeLayer(heatLayer);
+  }
+
   $("nVisible").textContent = state.visible.size.toLocaleString();
   updateSelectionCount();
+  updateFilterSummary();
   showStatus(
     `${state.visible.size.toLocaleString()} of ${state.records.length.toLocaleString()} mappable records match the current filters.`
   );
@@ -1523,13 +1666,21 @@ function pointInPolygon(lat, lon, ring) {
 map.on(L.Draw.Event.CREATED, e => {
   drawnItems.clearLayers();
   drawnItems.addLayer(e.layer);
-
-  const ring = e.layer.getLatLngs()[0];
   state.selected.clear();
 
-  for (const rec of state.records) {
-    if (!state.visible.has(rec.rowIndex)) continue;
-    if (pointInPolygon(rec.lat, rec.lon, ring)) state.selected.add(rec.rowIndex);
+  if (e.layerType === "rectangle" && e.layer.getBounds) {
+    const bounds = e.layer.getBounds();
+    for (const rec of state.records) {
+      if (!state.visible.has(rec.rowIndex)) continue;
+      if (bounds.contains([rec.lat, rec.lon])) state.selected.add(rec.rowIndex);
+    }
+  } else {
+    const latlngs = e.layer.getLatLngs();
+    const ring = Array.isArray(latlngs[0]) ? latlngs[0] : latlngs;
+    for (const rec of state.records) {
+      if (!state.visible.has(rec.rowIndex)) continue;
+      if (pointInPolygon(rec.lat, rec.lon, ring)) state.selected.add(rec.rowIndex);
+    }
   }
   render();
 });
@@ -1552,6 +1703,57 @@ function exportRows(rowIndexes, suffix) {
   });
 
   csvDownload(rows, `${safeFileStem(state.fileName)}_${suffix}.csv`);
+}
+
+
+function geoJSONDownload(rowIndexes, suffix) {
+  const ordered = [...rowIndexes].sort((a,b) => a-b);
+  const features = ordered.map(rowIndex => {
+    const rec = state.records.find(r => r.rowIndex === rowIndex);
+    if (!rec) return null;
+    return {
+      type:"Feature",
+      geometry:{ type:"Point", coordinates:[rec.lon, rec.lat] },
+      properties:{
+        ...state.rows[rowIndex],
+        trait_mmap_selected: state.selected.has(rowIndex) ? "yes" : "no",
+        trait_mmap_year: rec.year !== null ? rec.year : ""
+      }
+    };
+  }).filter(Boolean);
+
+  const collection = {
+    type:"FeatureCollection",
+    trait_mmap:{
+      source_file: state.fileName,
+      original_rows: state.rows.length,
+      mappable_rows: state.records.length,
+      exported_records: features.length,
+      filters: activeFilterDescriptions()
+    },
+    features
+  };
+
+  const blob = new Blob([JSON.stringify(collection)], {type:"application/geo+json;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${safeFileStem(state.fileName)}_${suffix}.geojson`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function downloadFilteredGeoJSON() {
+  geoJSONDownload(state.visible, "trait_mmap_filtered");
+}
+
+function downloadSelectedGeoJSON() {
+  if (!state.selected.size) {
+    alert("No records are currently selected. Right-click points or draw a rectangle/polygon first.");
+    return;
+  }
+  geoJSONDownload(state.selected, "trait_mmap_selected");
 }
 
 function downloadFiltered() {
@@ -1684,6 +1886,11 @@ $("clearPolygon").addEventListener("click", () => {
   drawnItems.clearLayers();
 });
 
+$("clusterToggle").addEventListener("change", render);
+$("heatToggle").addEventListener("change", render);
+$("zoomFiltered").addEventListener("click", zoomToFiltered);
+$("downloadFilteredGeoJSON").addEventListener("click", downloadFilteredGeoJSON);
+$("downloadSelectedGeoJSON").addEventListener("click", downloadSelectedGeoJSON);
 $("downloadFiltered").addEventListener("click", downloadFiltered);
 $("downloadSelected").addEventListener("click", downloadSelected);
 $("remapDataset").addEventListener("click", remapDataset);
