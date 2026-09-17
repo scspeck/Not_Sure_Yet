@@ -118,7 +118,7 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.3</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.4</div>
   <div class="subtitle">
     Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
@@ -317,6 +317,12 @@ const layerControl = L.control.layers(
 const ECOREGION_SERVICE =
   "https://data-gis.unep-wcmc.org/server/rest/services/Bio-geographicalRegions/Resolve_Ecoregions/FeatureServer/0";
 
+// Keep environmental reference polygons BELOW specimen points and prevent
+// them from intercepting mouse events intended for mammal records.
+map.createPane("ecoregionsPane");
+map.getPane("ecoregionsPane").style.zIndex = 350;
+map.getPane("ecoregionsPane").style.pointerEvents = "none";
+
 const ecoregionGroup = L.layerGroup();
 layerControl.addOverlay(ecoregionGroup, "Global terrestrial ecoregions");
 
@@ -425,17 +431,20 @@ async function refreshEcoregions() {
     ecoregionGroup.clearLayers();
 
     const geo = L.geoJSON(data, {
-      renderer: L.canvas({ padding: 0.2 }),
+      renderer: L.canvas({ padding: 0.2, pane: "ecoregionsPane" }),
+      pane: "ecoregionsPane",
+
+      // Ecoregions are a visual reference overlay, not selectable objects.
+      // This guarantees left/right clicks pass through to specimen markers.
+      interactive: false,
+
       style: feature => ({
         color: "#50575b",
         weight: 0.65,
         opacity: 0.75,
         fillColor: biomeColor(feature.properties),
         fillOpacity: 0.30
-      }),
-      onEachFeature: (feature, layer) => {
-        layer.bindPopup(() => ecoregionPopup(feature));
-      }
+      })
     });
 
     geo.eachLayer(layer => ecoregionGroup.addLayer(layer));
@@ -464,6 +473,12 @@ map.on("overlayremove", e => {
   if (e.layer === ecoregionGroup) {
     if (ecoregionRequestController) ecoregionRequestController.abort();
     ecoregionGroup.clearLayers();
+
+    // Defensive cleanup: the pane itself never receives pointer events, so
+    // specimen selection remains available immediately after toggling off.
+    const pane = map.getPane("ecoregionsPane");
+    if (pane) pane.style.pointerEvents = "none";
+
     if (ecoregionLegend) map.removeControl(ecoregionLegend);
   }
 });
@@ -1082,9 +1097,14 @@ function corePasses(row) {
   for (const {field,select} of state.coreFilters.values()) {
     if (!select.value) continue;
     const raw = String(row[field] ?? "").trim();
-    // Exact matching prevents a state such as "Kansas" from also matching
-    // rows that merely contain the word elsewhere.
-    if (raw !== select.value) return false;
+    const selected = String(select.value ?? "").trim();
+
+    // Strict categorical matching: a selected value excludes blanks and all
+    // other values. localeCompare avoids accidental case-only mismatches.
+    if (!raw) return false;
+    if (raw.localeCompare(selected, undefined, { sensitivity: "accent" }) !== 0) {
+      return false;
+    }
   }
   return true;
 }
@@ -1207,8 +1227,11 @@ function buildTraitFilters() {
       includeMissing.className = "check-inline";
       const missingCheck = document.createElement("input");
       missingCheck.type = "checkbox";
-      missingCheck.checked = true;
-      includeMissing.append(missingCheck, document.createTextNode("Include missing values"));
+      missingCheck.checked = false;
+      includeMissing.append(
+        missingCheck,
+        document.createTextNode("Include missing values only when no specific value is selected")
+      );
 
       const filter = { type:"categorical", field:def.field, select, missingCheck };
       state.traitFilters.set(def.field, filter);
@@ -1313,11 +1336,22 @@ function traitPasses(row) {
     }
 
     if (filter.type === "categorical") {
-      if (!raw) {
-        if (!filter.missingCheck.checked) return false;
+      const selected = String(filter.select.value ?? "").trim();
+
+      // A specific categorical selection is strict: selecting "Myotis"
+      // means ONLY rows whose selected field is Myotis can pass.
+      // Missing values never pass a specific selection.
+      if (selected) {
+        if (!raw) return false;
+        if (raw.localeCompare(selected, undefined, { sensitivity: "accent" }) !== 0) {
+          return false;
+        }
         continue;
       }
-      if (filter.select.value && raw !== filter.select.value) return false;
+
+      // When "All values" is selected, the researcher may independently
+      // choose whether records missing this field should remain visible.
+      if (!raw && !filter.missingCheck.checked) return false;
     }
 
     if (filter.type === "text") {
