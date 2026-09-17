@@ -118,7 +118,7 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.4</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · upload-first v0.2.5</div>
   <div class="subtitle">
     Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
@@ -1223,15 +1223,14 @@ function buildTraitFilters() {
         select.appendChild(o);
       });
 
-      const includeMissing = document.createElement("label");
-      includeMissing.className = "check-inline";
+      // Categorical filters are inactive while "All values" is selected.
+      // Missing values are therefore retained automatically until a specific
+      // category is chosen.
+      const includeMissing = document.createElement("span");
+      includeMissing.style.display = "none";
       const missingCheck = document.createElement("input");
       missingCheck.type = "checkbox";
-      missingCheck.checked = false;
-      includeMissing.append(
-        missingCheck,
-        document.createTextNode("Include missing values only when no specific value is selected")
-      );
+      missingCheck.checked = true;
 
       const filter = { type:"categorical", field:def.field, select, missingCheck };
       state.traitFilters.set(def.field, filter);
@@ -1338,20 +1337,18 @@ function traitPasses(row) {
     if (filter.type === "categorical") {
       const selected = String(filter.select.value ?? "").trim();
 
-      // A specific categorical selection is strict: selecting "Myotis"
-      // means ONLY rows whose selected field is Myotis can pass.
-      // Missing values never pass a specific selection.
-      if (selected) {
-        if (!raw) return false;
-        if (raw.localeCompare(selected, undefined, { sensitivity: "accent" }) !== 0) {
-          return false;
-        }
-        continue;
-      }
+      // IMPORTANT: "All values" means this field is NOT filtering the data.
+      // Do not remove records merely because the field is blank. This keeps
+      // the full mappable dataset visible until the researcher chooses a
+      // specific categorical value.
+      if (!selected) continue;
 
-      // When "All values" is selected, the researcher may independently
-      // choose whether records missing this field should remain visible.
-      if (!raw && !filter.missingCheck.checked) return false;
+      // Once a specific value is selected, matching is strict. Missing values
+      // and all other categories are excluded.
+      if (!raw) return false;
+      if (raw.localeCompare(selected, undefined, { sensitivity: "accent" }) !== 0) {
+        return false;
+      }
     }
 
     if (filter.type === "text") {
