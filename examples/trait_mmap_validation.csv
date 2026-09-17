@@ -1,0 +1,21 @@
+record_id,scientific_name,genus,species,state_province,country,year,weight_g,total_length_mm,sex,life_stage,latitude,longitude,parasite_taxa
+T001,Myotis lucifugus,Myotis,lucifugus,Kansas,USA,2020,8.2,92,male,adult,39.1836,-96.5717,
+T002,Myotis lucifugus,Myotis,lucifugus,Kansas,USA,2021,7.5 g,90,female,adult,38.9717,-95.2353,
+T003,Myotis velifer,Myotis,velifer,Kansas,USA,2019,12.1,104,female,adult,37.6872,-97.3301,
+T004,Myotis velifer,Myotis,velifer,Oklahoma,USA,2018,11.7,102,male,adult,35.4676,-97.5164,
+T005,Myotis septentrionalis,Myotis,septentrionalis,Missouri,USA,2017,6.8,88,female,adult,38.5767,-92.1735,
+T006,Geomys bursarius,Geomys,bursarius,Kansas,USA,2020,190,240,male,adult,39.0473,-95.6752,
+T007,Geomys bursarius,Geomys,bursarius,Oklahoma,USA,2021,205,245,female,adult,36.154,-95.9928,
+T008,Peromyscus leucopus,Peromyscus,leucopus,Kansas,USA,2022,22.4,178,male,adult,39.3111,-96.592,Ixodes sp.
+T009,Peromyscus maniculatus,Peromyscus,maniculatus,Kansas,USA,2022,18.9,165,female,adult,39.105,-96.58,Flea sp.
+T010,Sigmodon hispidus,Sigmodon,hispidus,Kansas,USA,2016,115,260,male,adult,39.19,-96.59,Mite sp.
+T011,Neotoma floridana,Neotoma,floridana,Kansas,USA,2015,285,340,female,adult,39.08,-96.62,
+T012,Microtus ochrogaster,Microtus,ochrogaster,Kansas,USA,2014,42,150,female,adult,39.12,-96.55,
+T013,Myotis lucifugus,,lucifugus,Kansas,USA,2020,8.0,91,male,adult,39.21,-96.6,
+T014,Myotis lucifugus,Myotis,lucifugus,Kansas,USA,,8.4,93,,,39.2200,-96.6100,
+T015,Myotis lucifugus,Myotis,lucifugus,Kansas,USA,2020,,94,female,adult,39.23,-96.62,
+T016,Geomys bursarius,Geomys,bursarius,Kansas,USA,2020,198,243,male,adult,,,
+T017,Myotis velifer,Myotis,velifer,Kansas,USA,2020,12.5,105,male,adult,95.0,-96.0,
+T018,Peromyscus leucopus,Peromyscus,leucopus,Colorado,USA,2020,21.0,175,female,adult,39.7392,-104.9903,
+T019,Myotis velifer,Myotis,velifer,Kansas,USA,2023,13.0 g,106 mm,male,adult,37.75,-97.3,
+T020,Geomys bursarius,Geomys,bursarius,Kansas,USA,2023,210,250,female,adult,38.9,-97.0,
