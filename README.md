@@ -1,40 +1,52 @@
-# Trait MMAP-Mapper for Mammals and Parasites
+# Trait MMAP
 
-This branch/package changes Trait MMAP from a static hosted-data atlas into an **upload-first research tool**.
+**Trait MMAP (Mapper for Mammals and Parasites)** is an upload-first, browser-based research mapping tool for rapid spatial exploration of mammal, parasite, museum-specimen, locality, and trait datasets.
 
-## What changed
+Researchers upload a CSV, map coordinate and descriptive fields, classify arbitrary columns as numeric, categorical, or text traits, filter records, inspect and spatially select observations, visualize record density, and export subsets as CSV or GeoJSON.
 
-- No `tracker.json` is required at page load.
-- The landing workflow begins with a user CSV upload.
-- Users explicitly map latitude/longitude and optional ID, taxon, date, geography, and locality fields.
-- Trait MMAP infers potential trait types and lets the user choose which columns become filters.
-- Numeric traits generate min/max filters.
-- Categorical traits generate value filters.
-- Text traits generate contains-search filters.
-- The map can color points by a categorical trait and size points by a numeric trait.
-- Left-click inspects a record.
-- Right-click selects/deselects a record.
-- Polygon selection selects all currently visible points inside the polygon.
-- Filtered and selected downloads preserve all original CSV columns.
-- Uploaded data remain client-side in the browser session.
-- A small example dataset is embedded in the application and also provided under `examples/`.
+## Core workflow
+1. Upload a CSV or load the bundled example.
+2. Map latitude, longitude, taxonomy, date, geography, and other fields.
+3. Select additional numeric, categorical, or text traits.
+4. Build the map.
+5. Filter, search, cluster, inspect, or spatially select records.
+6. Export filtered or selected records as CSV or GeoJSON.
 
-## Deploy
+## Major features
+- Flexible upload-first CSV workflow.
+- Exact categorical and numeric exact/minimum/maximum filtering.
+- Unit-tolerant numeric parsing while preserving original exported values.
+- Marker clustering and record-density heatmap.
+- Left-click inspection and right-click individual selection.
+- Rectangle and polygon spatial selection.
+- CSV and GeoJSON export.
+- Active-filter summary and zoom-to-filtered.
+- Scale bar, cursor coordinates, full-screen view, and place navigation.
+- Optional RESOLVE terrestrial ecoregion reference overlay.
 
-The app is static. Upload `index.html` to the root of a GitHub Pages repository and deploy it normally.
-
-No Python process, database, static dataset, or API key is required for ordinary use.
-
-## Optional validation
-
-For a large research dataset, run:
+## Running locally
+Serve the repository rather than opening `index.html` as a `file://` page:
 
 ```bash
-python scripts/validate_dataset.py your_data.csv --lat DEC_LAT --lon DEC_LONG --scientific-name SCIENTIFIC_NAME --date VERBATIM_DATE
+python -m http.server 8000
 ```
 
-This helper reports coordinate completeness, year range, and basic taxonomic counts. It does not transform the original data.
+Then open `http://localhost:8000`.
 
-## Important architectural point
+## Minimum input
+Valid latitude and longitude are required for a row to be mappable. Other fields are optional and mapped by the user. See `docs/DATA_FORMAT.md`.
 
-Source-specific integrations (Arctos, GBIF, institutional APIs, etc.) should be implemented later as **optional import adapters** that produce the same tabular input model used by the upload workflow. Trait MMAP itself should remain usable without an account or API key.
+## Scientific interpretation
+Trait MMAP visualizes records; it does not infer abundance, occupancy, causation, or ecological association. Spatial density can reflect collecting effort, digitization history, missing data, spatial bias, or biology. The heatmap represents **mapped record density, not organism abundance**.
+
+## Validation and documentation
+A controlled regression dataset is in `examples/`. See `docs/TESTING.md`, `docs/USER_GUIDE.md`, `docs/DATA_FORMAT.md`, `docs/DATA_SOURCES.md`, and `docs/MAINTENANCE.md`.
+
+## Citation
+Citation metadata are provided in `CITATION.cff`. Add the archival DOI after v1.0.0 is deposited.
+
+## License
+MIT. See `LICENSE`.
+
+## Release status
+Version 1.0.0 is the publication-oriented release candidate. Complete `RELEASE_CHECKLIST.md` before tagging the archival release.

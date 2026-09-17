@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use Trait MMAP in research, please cite the software release."
+title: "Trait MMAP: Mapper for Mammals and Parasites"
+type: software
+version: 1.0.0
+date-released: 2026-09-17
+license: MIT
+authors:
+  - given-names: Samuel C.
+    family-names: Speck
+    affiliation: Kansas State University
+abstract: >-
+  Trait MMAP is a browser-based, upload-first research mapping tool for exploring
+  mammal, parasite, specimen, locality, and trait data. Users can map CSV records,
+  filter arbitrary traits, spatially select observations, visualize record density,
+  and export analysis-ready CSV or GeoJSON subsets.
+keywords:
+  - biodiversity informatics
+  - mammals
+  - parasites
+  - museum collections
+  - traits
+  - GIS
+  - Leaflet
+repository-code: "REPLACE_WITH_GITHUB_REPOSITORY_URL"
+url: "REPLACE_WITH_LIVE_TRAIT_MMAP_URL"
+# After archival, add the version DOI.
