@@ -1,4 +1,4 @@
-# Trait MMAP — Mapper for Mammals and Parasites
+# Trait MMAP-Mapper for Mammals and Parasites
 
 This branch/package changes Trait MMAP from a static hosted-data atlas into an **upload-first research tool**.
 
