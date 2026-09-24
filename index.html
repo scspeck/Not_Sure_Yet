@@ -123,7 +123,7 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites · v1.0.0</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · v1.0.1-rc1</div>
   <div class="subtitle">
     Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
@@ -1152,19 +1152,19 @@ function buildCoreFilters() {
   }
 }
 
+function strictCategoricalMatch(rawValue, selectedValue) {
+  const selected = String(selectedValue ?? "").trim();
+  if (!selected) return true;                 // inactive filter
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) return false;                     // active filter never accepts missing
+  return raw.localeCompare(selected, undefined, { sensitivity:"accent" }) === 0;
+}
+
 function corePasses(row) {
   if (!state.coreFilters) return true;
   for (const {field,select} of state.coreFilters.values()) {
     if (!select.value) continue;
-    const raw = String(row[field] ?? "").trim();
-    const selected = String(select.value ?? "").trim();
-
-    // Strict categorical matching: a selected value excludes blanks and all
-    // other values. localeCompare avoids accidental case-only mismatches.
-    if (!raw) return false;
-    if (raw.localeCompare(selected, undefined, { sensitivity: "accent" }) !== 0) {
-      return false;
-    }
+    if (!strictCategoricalMatch(row[field], select.value)) return false;
   }
   return true;
 }
@@ -1373,12 +1373,9 @@ function traitPasses(row) {
 
       const n = parseFinite(raw);
 
-      // Once a numeric filter is active, missing/unparseable values are
-      // excluded unless the researcher explicitly asks to keep them.
-      if (n === null) {
-        if (!filter.missingCheck.checked) return false;
-        continue;
-      }
+      // Once a numeric criterion is active, a missing/unparseable value can
+      // never satisfy that criterion. This is intentionally strict.
+      if (n === null) return false;
 
       const exact = exactText === "" ? null : Number(exactText);
       const min = minText === "" ? null : Number(minText);
@@ -1405,10 +1402,7 @@ function traitPasses(row) {
 
       // Once a specific value is selected, matching is strict. Missing values
       // and all other categories are excluded.
-      if (!raw) return false;
-      if (raw.localeCompare(selected, undefined, { sensitivity: "accent" }) !== 0) {
-        return false;
-      }
+      if (!strictCategoricalMatch(raw, selected)) return false;
     }
 
     if (filter.type === "text") {
