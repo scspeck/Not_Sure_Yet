@@ -1630,45 +1630,56 @@ function render() {
   state.visible.clear();
   state.markers.clear();
 
-  const clusterLayers = [];
-  const plainLayers = [];
-  const heatPoints = [];
+  const clustered = $("clusterToggle").checked;
+  const heatEnabled = $("heatToggle").checked;
+  const markerLayers = [];
+  const heatPoints = heatEnabled ? [] : null;
 
   for (const rec of state.records) {
     if (!recordPasses(rec)) continue;
 
     state.visible.add(rec.rowIndex);
 
-    // Separate marker instances are required because a Leaflet layer cannot
-    // belong to both the clustered and plain layer groups simultaneously.
-    const makeMarker = () => {
-      const marker = L.circleMarker([rec.lat, rec.lon], markerStyle(rec));
-      marker.bindPopup(recordPopup(rec));
-      marker.on("contextmenu", e => {
-        L.DomEvent.stopPropagation(e);
-        if (e.originalEvent) L.DomEvent.preventDefault(e.originalEvent);
-        toggleSelection(rec.rowIndex);
-      });
-      return marker;
-    };
+    // Create only ONE marker for the currently requested display mode.
+    // Popup HTML is generated lazily on click rather than for every record
+    // during initial rendering. This substantially reduces memory use for
+    // very large datasets while preserving left-click inspection and
+    // right-click selection behavior.
+    const marker = L.circleMarker([rec.lat, rec.lon], markerStyle(rec));
 
-    const clusteredMarker = makeMarker();
-    const plainMarker = makeMarker();
-    state.markers.set(rec.rowIndex, $("clusterToggle").checked ? clusteredMarker : plainMarker);
-    clusterLayers.push(clusteredMarker);
-    plainLayers.push(plainMarker);
-    heatPoints.push([rec.lat, rec.lon, 1]);
+    marker.on("click", () => {
+      marker.bindPopup(recordPopup(rec), { maxWidth: 420 });
+      marker.openPopup();
+    });
+
+    marker.on("contextmenu", e => {
+      L.DomEvent.stopPropagation(e);
+      if (e.originalEvent) L.DomEvent.preventDefault(e.originalEvent);
+      toggleSelection(rec.rowIndex);
+    });
+
+    state.markers.set(rec.rowIndex, marker);
+    markerLayers.push(marker);
+
+    // Build the heat array only when the heatmap is actually enabled.
+    if (heatPoints) heatPoints.push([rec.lat, rec.lon, 1]);
   }
 
-  cluster.addLayers(clusterLayers);
-  plainPoints.addLayer(L.layerGroup(plainLayers));
+  // Populate only the active point renderer. Do not construct a duplicate
+  // set of Leaflet marker layers for the inactive display mode.
+  if (clustered) {
+    cluster.addLayers(markerLayers);
+  } else {
+    plainPoints.addLayer(L.layerGroup(markerLayers));
+  }
   setPointDisplayMode();
 
-  heatLayer.setLatLngs(heatPoints);
-  if ($("heatToggle").checked) {
+  if (heatEnabled) {
+    heatLayer.setLatLngs(heatPoints);
     if (!map.hasLayer(heatLayer)) heatLayer.addTo(map);
-  } else if (map.hasLayer(heatLayer)) {
-    map.removeLayer(heatLayer);
+  } else {
+    heatLayer.setLatLngs([]);
+    if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
   }
 
   $("nVisible").textContent = state.visible.size.toLocaleString();
