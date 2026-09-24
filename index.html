@@ -123,7 +123,7 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
 <body>
 <aside>
   <h1>Trait MMAP</h1>
-  <div class="brand-sub">Mapper for Mammals and Parasites · v1.0.1-rc1</div>
+  <div class="brand-sub">Mapper for Mammals and Parasites · v1.0.2-rc1</div>
   <div class="subtitle">
     Upload a georeferenced mammal dataset, choose the biological traits you want to explore,
     filter records interactively, select them spatially, and export research-ready subsets.
@@ -1425,13 +1425,28 @@ function recordPasses(rec) {
   }
 
   if (state.mappings.date && state.yearExtent) {
-    const minY = $("yearMin").value === "" ? -Infinity : Number($("yearMin").value);
-    const maxY = $("yearMax").value === "" ? Infinity : Number($("yearMax").value);
-    if (rec.year === null) {
-      if (!$("includeUnknownYear").checked) return false;
-    } else {
-      if (Number.isFinite(minY) && rec.year < minY) return false;
-      if (Number.isFinite(maxY) && rec.year > maxY) return false;
+    const minText = $("yearMin").value.trim();
+    const maxText = $("yearMax").value.trim();
+
+    // The year filter is active only when the user narrows the observed
+    // year extent. The default full extent (or two blank boxes) is an
+    // inactive filter and MUST NOT exclude records with unknown year.
+    const minY = minText === "" ? null : Number(minText);
+    const maxY = maxText === "" ? null : Number(maxText);
+    const fullMin = state.yearExtent[0];
+    const fullMax = state.yearExtent[1];
+
+    const minActive = minY !== null && Number.isFinite(minY) && minY > fullMin;
+    const maxActive = maxY !== null && Number.isFinite(maxY) && maxY < fullMax;
+    const yearFilterActive = minActive || maxActive;
+
+    if (yearFilterActive) {
+      if (rec.year === null) {
+        if (!$("includeUnknownYear").checked) return false;
+      } else {
+        if (minActive && rec.year < minY) return false;
+        if (maxActive && rec.year > maxY) return false;
+      }
     }
   }
 
@@ -1535,10 +1550,15 @@ function activeFilterDescriptions() {
   if (q) parts.push(`search: "${q}"`);
 
   if (state.mappings.date && state.yearExtent) {
-    const min = $("yearMin").value, max = $("yearMax").value;
-    if (min && Number(min) !== state.yearExtent[0]) parts.push(`year ≥ ${min}`);
-    if (max && Number(max) !== state.yearExtent[1]) parts.push(`year ≤ ${max}`);
-    if (!$("includeUnknownYear").checked) parts.push("known year only");
+    const min = $("yearMin").value.trim();
+    const max = $("yearMax").value.trim();
+    const minActive = min !== "" && Number.isFinite(Number(min)) && Number(min) > state.yearExtent[0];
+    const maxActive = max !== "" && Number.isFinite(Number(max)) && Number(max) < state.yearExtent[1];
+    const yearFilterActive = minActive || maxActive;
+
+    if (minActive) parts.push(`year ≥ ${min}`);
+    if (maxActive) parts.push(`year ≤ ${max}`);
+    if (yearFilterActive && !$("includeUnknownYear").checked) parts.push("known year only");
   }
 
   for (const filter of state.traitFilters.values()) {
