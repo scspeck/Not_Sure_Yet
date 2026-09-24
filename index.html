@@ -1101,7 +1101,20 @@ function buildRecords() {
     });
   });
 
-  state.yearExtent = years.length ? [Math.min(...years), Math.max(...years)] : null;
+  // Avoid spreading very large arrays into Math.min/Math.max.
+  // Browsers impose an argument-count/call-stack limit, which can be exceeded
+  // by research datasets with tens or hundreds of thousands of records.
+  if (years.length) {
+    let minYear = Infinity;
+    let maxYear = -Infinity;
+    for (const y of years) {
+      if (y < minYear) minYear = y;
+      if (y > maxYear) maxYear = y;
+    }
+    state.yearExtent = [minYear, maxYear];
+  } else {
+    state.yearExtent = null;
+  }
   return true;
 }
 
@@ -1219,7 +1232,14 @@ function buildTraitFilters() {
         input.addEventListener("input", render);
         card.append(warning, input);
       } else {
-        const min = Math.min(...vals), max = Math.max(...vals);
+        // Compute numeric extent iteratively so large uploaded datasets do not
+        // exceed the browser's function-argument/call-stack limit.
+        let min = Infinity;
+        let max = -Infinity;
+        for (const value of vals) {
+          if (value < min) min = value;
+          if (value > max) max = value;
+        }
 
         const domain = document.createElement("div");
         domain.className = "small";
