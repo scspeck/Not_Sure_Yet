@@ -218,7 +218,8 @@ footer{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--border)}
     <div class="small">Record density reflects mapped records, not organism abundance.</div>
 
     <div class="section">Active filters</div>
-    <div id="activeFilterSummary" class="small filter-summary">No active filters.</div>
+    <button id="clearFilters" class="secondary" type="button">Clear filters</button>
+    <div id="activeFilterSummary" class="small filter-summary" style="margin-top:7px">No active filters.</div>
 
     <div class="section">Spatial selection</div>
     <div class="small">
@@ -1888,6 +1889,7 @@ $("globalSearch").addEventListener("input", render);
 $("yearMin").addEventListener("input", render);
 $("yearMax").addEventListener("input", render);
 $("includeUnknownYear").addEventListener("change", render);
+$("clearFilters").addEventListener("click", resetFiltersOnly);
 $("colorBy").addEventListener("change", render);
 $("sizeBy").addEventListener("change", render);
 
